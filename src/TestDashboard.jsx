@@ -89,9 +89,20 @@ const INITIAL_CASES = [
   { id:"IA-WA-04", module:"IA — WhatsApp", title:"Exibir pré-visualização antes do envio", tipo:"IA", prioridade:"Médio", obs:"Preview formatado", status:"pending" },
   { id:"IA-WA-05", module:"IA — WhatsApp", title:"Solicitar informações mínimas se contexto vazio", tipo:"IA", prioridade:"Alto", obs:"Validação do input do usuário", status:"pending" },
   { id:"IA-WA-06", module:"IA — WhatsApp", title:"Registrar histórico de mensagens enviadas", tipo:"Funcional", prioridade:"Médio", obs:"Para auditoria e reuso", status:"pending" },
+  // CARGA & PERFORMANCE
+  { id:"CP-01", module:"Carga & Performance", title:"100 usuários simultâneos no portal do paciente", tipo:"Carga", prioridade:"Crítico", obs:"Tempo de resposta < 2s sob carga", status:"pending" },
+  { id:"CP-02", module:"Carga & Performance", title:"50 agendamentos simultâneos sem conflito", tipo:"Carga", prioridade:"Crítico", obs:"Sem duplicidade de horário", status:"pending" },
+  { id:"CP-03", module:"Carga & Performance", title:"Login concorrente de 30 admins", tipo:"Carga", prioridade:"Alto", obs:"Sem falha de autenticação", status:"pending" },
+  { id:"CP-04", module:"Carga & Performance", title:"Geração de resumo IA com 20 req. simultâneas", tipo:"Carga", prioridade:"Crítico", obs:"SLA: todas < 15s", status:"pending" },
+  { id:"CP-05", module:"Carga & Performance", title:"Envio em massa de mensagens WhatsApp", tipo:"Carga", prioridade:"Alto", obs:"Fila sem perda de mensagens", status:"pending" },
+  { id:"CP-06", module:"Carga & Performance", title:"Busca de clientes com base de 10.000 registros", tipo:"Carga", prioridade:"Alto", obs:"Resposta < 1s", status:"pending" },
+  { id:"CP-07", module:"Carga & Performance", title:"Dashboard admin com dados de 6 meses carregados", tipo:"Carga", prioridade:"Médio", obs:"Sem timeout no carregamento", status:"pending" },
+  { id:"CP-08", module:"Carga & Performance", title:"Exportação de relatório PDF com 1.000+ registros", tipo:"Carga", prioridade:"Médio", obs:"Gerado em < 30s", status:"pending" },
+  { id:"CP-09", module:"Carga & Performance", title:"Sistema mantém estabilidade em pico de 200 req/min", tipo:"Carga", prioridade:"Crítico", obs:"Taxa de erro < 1%", status:"pending" },
+  { id:"CP-10", module:"Carga & Performance", title:"Tempo de recuperação após pico de carga", tipo:"Carga", prioridade:"Alto", obs:"Normalizar em < 60s", status:"pending" },
 ];
 
-const MODULES_ORDER = ["Cliente","Administrador","Portal do Paciente","IA — Risco de Falta","IA — Resumo","IA — WhatsApp"];
+const MODULES_ORDER = ["Cliente","Administrador","Portal do Paciente","IA — Risco de Falta","IA — Resumo","IA — WhatsApp","Carga & Performance"];
 const STATUS_CYCLE = ["pending","passed","failed","blocked"];
 
 const STATUS_CFG = {
@@ -112,6 +123,7 @@ const TIPO_CFG = {
   "Funcional": { color:"#22c55e", bg:"#052e16" },
   "Segurança": { color:"#f97316", bg:"#2a1200" },
   "IA":        { color:"#a855f7", bg:"#1a0a2a" },
+  "Carga":     { color:"#06b6d4", bg:"#0a2a2a" },
   "Interface": { color:"#3b82f6", bg:"#0c1a3a" },
 };
 
