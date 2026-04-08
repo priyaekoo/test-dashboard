@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import {
   CheckCircle, XCircle, AlertCircle, Clock, Bug, LayoutDashboard,
   List, FileText, Plus, X, Search, Printer, ChevronDown, ChevronUp,
-  RefreshCw, AlertTriangle, Layers
+  RefreshCw, AlertTriangle, Layers, Edit2, Trash2
 } from "lucide-react";
 
 // ── PALETTE ────────────────────────────────────────────────────────────────
