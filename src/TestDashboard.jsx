@@ -308,14 +308,140 @@ function DashboardView({ cases, bugs }) {
   );
 }
 
+// ── GHERKIN DISPLAY ────────────────────────────────────────────────────────
+function GherkinDisplay({ text }) {
+  if (!text || !text.trim()) {
+    return (
+      <p style={{ color: C.textMuted, fontSize: 12, fontStyle: "italic", fontFamily: "monospace" }}>
+        Cenário Gherkin não definido. Clique em Editar para adicionar.
+      </p>
+    );
+  }
+  const getLineStyle = (line) => {
+    const t = line.trimStart();
+    if (/^(Feature:|Funcionalidade:)/i.test(t)) return { color: "#3b82f6", fontWeight: 700 };
+    if (/^(Scenario:|Scenario Outline:|Cenário:|Esquema do Cenário:|Background:|Contexto:)/i.test(t)) return { color: "#a855f7", fontWeight: 700 };
+    if (/^(Given |Dado |Dada |Dados )/i.test(t)) return { color: "#22c55e" };
+    if (/^(When |Quando )/i.test(t)) return { color: "#f59e0b" };
+    if (/^(Then |Então |Entao )/i.test(t)) return { color: "#06b6d4" };
+    if (/^(And |E |But |Mas )/i.test(t)) return { color: "#94a3b8" };
+    if (/^(Examples:|Exemplos:)/i.test(t)) return { color: "#f97316", fontWeight: 700 };
+    if (t.startsWith("|")) return { color: "#e2e8f0" };
+    if (t.startsWith("#")) return { color: "#475569", fontStyle: "italic" };
+    return { color: "#64748b" };
+  };
+  return (
+    <pre style={{
+      background: "#050c18", border: `1px solid ${C.border}`,
+      borderRadius: 6, padding: 12, fontSize: 12,
+      fontFamily: "IBM Plex Mono, monospace", lineHeight: 1.8,
+      overflowX: "auto", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word"
+    }}>
+      {text.split("\n").map((line, i) => (
+        <span key={i} style={getLineStyle(line)}>{line}{"\n"}</span>
+      ))}
+    </pre>
+  );
+}
+
+// ── CASE FORM MODAL ────────────────────────────────────────────────────────
+function CaseFormModal({ initial, onSave, onCancel }) {
+  const isNew = !initial;
+  const [form, setForm] = useState(initial ? { ...initial } : {
+    module: "Cliente", title: "", tipo: "Funcional",
+    prioridade: "Alto", obs: "", gherkin: "", status: "pending"
+  });
+  const inp = {
+    background: C.card, border: `1px solid ${C.border}`, color: C.text,
+    borderRadius: 8, padding: "8px 12px", fontSize: 13,
+    fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box"
+  };
+  const handleSave = () => {
+    if (!form.title.trim()) return;
+    onSave(form);
+  };
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 1000, padding: 24
+    }}>
+      <div style={{
+        background: C.card, border: `1px solid ${C.borderLight}`,
+        borderRadius: 16, padding: 28, width: "100%", maxWidth: 700,
+        maxHeight: "90vh", overflowY: "auto"
+      }}>
+        <h3 style={{ color: C.text, fontSize: 16, fontWeight: 800, marginBottom: 20 }}>
+          {isNew ? "Novo Caso de Teste" : `Editar — ${initial.id}`}
+        </h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ gridColumn: "1/-1" }}>
+            <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TÍTULO *</label>
+            <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              placeholder="Título do caso de teste..." style={inp} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>MÓDULO</label>
+              <select value={form.module} onChange={e => setForm(f => ({ ...f, module: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+                {MODULES_ORDER.map(m => <option key={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TIPO</label>
+              <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+                {["Funcional","Segurança","IA","Carga","Interface"].map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>PRIORIDADE</label>
+              <select value={form.prioridade} onChange={e => setForm(f => ({ ...f, prioridade: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+                {["Crítico","Alto","Médio","Baixo"].map(p => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>DADO / OBSERVAÇÃO</label>
+            <input value={form.obs} onChange={e => setForm(f => ({ ...f, obs: e.target.value }))}
+              placeholder="Dados de entrada, critérios, observações..." style={inp} />
+          </div>
+          <div>
+            <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>CENÁRIO GHERKIN</label>
+            <p style={{ color: C.textMuted, fontSize: 11, marginBottom: 6 }}>
+              Use: <span style={{ color: "#3b82f6" }}>Feature:</span> · <span style={{ color: "#a855f7" }}>Scenario:</span> · <span style={{ color: "#22c55e" }}>Given</span> · <span style={{ color: "#f59e0b" }}>When</span> · <span style={{ color: "#06b6d4" }}>Then</span> · <span style={{ color: "#94a3b8" }}>And</span>
+            </p>
+            <textarea
+              value={form.gherkin || ""}
+              onChange={e => setForm(f => ({ ...f, gherkin: e.target.value }))}
+              placeholder={"Feature: Módulo XYZ\n\n  Scenario: Nome do cenário\n    Given que o usuário está autenticado\n    When o usuário realiza a ação\n    Then o sistema deve exibir o resultado esperado"}
+              style={{ ...inp, minHeight: 180, resize: "vertical", fontFamily: "IBM Plex Mono, monospace", fontSize: 12, lineHeight: 1.7 }}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 24 }}>
+          <button onClick={onCancel} style={{
+            background: "transparent", border: `1px solid ${C.border}`,
+            color: C.textMuted, borderRadius: 8, padding: "8px 18px", fontSize: 13, cursor: "pointer"
+          }}>Cancelar</button>
+          <button onClick={handleSave} style={{
+            background: C.blue, color: "#fff", border: "none",
+            borderRadius: 8, padding: "8px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer"
+          }}>{isNew ? "Criar Caso" : "Salvar Alterações"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── TEST CASES VIEW ────────────────────────────────────────────────────────
-function TestCasesView({ cases, onStatusChange, onAddNote }) {
+function TestCasesView({ cases, onStatusChange, onAddNote, onAdd, onEdit, onDelete }) {
   const [search, setSearch] = useState("");
   const [filterMod, setFilterMod] = useState("Todos");
   const [filterStatus, setFilterStatus] = useState("Todos");
   const [filterPrio, setFilterPrio] = useState("Todos");
   const [expandedId, setExpandedId] = useState(null);
   const [notes, setNotes] = useState({});
+  const [modal, setModal] = useState(null); // null | "new" | {case object for edit}
 
   const filtered = cases.filter(c => {
     const matchSearch = !search || c.title.toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase());
