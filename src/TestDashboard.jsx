@@ -228,7 +228,7 @@ function DashboardView({ cases, bugs }) {
   return (
     <div style={{ display:"flex", flexDirection:"column", gap: 24 }}>
       {/* KPI row */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap: 16 }}>
         <StatCard label="Cobertura" value={`${coverage}%`} color={coverage > 70 ? C.passed : coverage > 40 ? C.blocked : C.failed} Icon={Layers} sub={`${executed}/${total} executados`} />
         <StatCard label="Passaram" value={passed} color={C.passed} Icon={CheckCircle} sub={total>0?`${Math.round(passed/total*100)}% do total`:""} />
         <StatCard label="Falharam" value={failed} color={C.failed} Icon={XCircle} sub={total>0?`${Math.round(failed/total*100)}% do total`:""} />
