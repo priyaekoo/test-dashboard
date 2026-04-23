@@ -1,0 +1,44 @@
+{
+  "PAC-AUTO-FILTRO-NOME": {
+    "status": "failed",
+    "error": "Error: expect(received).toContain(expected) // indexOf\n\nExpected substring: \"testes\"\nReceived string:    \"maily silva cunha\"",
+    "date": "23/04/2026",
+    "time": "12:01:01",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  },
+  "PAC-TELA-FILTRO-NOME": {
+    "status": "passed",
+    "error": null,
+    "date": "22/04/2026",
+    "time": "22:38:28",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  },
+  "PAC-TELA-FILTRO-CPF": {
+    "status": "blocked",
+    "error": null,
+    "date": "22/04/2026",
+    "time": "22:38:28",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  },
+  "PAC-TELA-FILTRO-TEL": {
+    "status": "failed",
+    "error": "expect(locator).not.toHaveCount(expected) failed\n\nLocator:  locator(\"tbody tr:has(td + td)\")\nExpected: not 15\nReceived: 15",
+    "date": "22/04/2026",
+    "time": "22:38:43",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  },
+  "PAC-TELA-VAZIO": {
+    "status": "passed",
+    "error": null,
+    "date": "22/04/2026",
+    "time": "22:38:56",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  },
+  "PAC-TELA-LIMPAR": {
+    "status": "passed",
+    "error": null,
+    "date": "22/04/2026",
+    "time": "22:38:56",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  }
+}
