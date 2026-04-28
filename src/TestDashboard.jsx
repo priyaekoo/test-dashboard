@@ -1,1456 +1,1180 @@
-import { useState, useEffect, useCallback } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { db } from "./firebase";
+import { ref as dbRef, set as dbSet, onValue } from "firebase/database";
 import {
-  CheckCircle, XCircle, AlertCircle, Clock, Bug, LayoutDashboard,
-  List, FileText, Plus, X, Search, Printer, ChevronDown, ChevronUp,
-  RefreshCw, Layers
+  CheckCircle, XCircle, Clock, Bug, LayoutDashboard,
+  ChevronRight, Plus, X, MessageSquare, Upload,
+  Edit2, Trash2, RefreshCw, Layers, ChevronDown, ChevronUp
 } from "lucide-react";
 
-// ── PALETTE ────────────────────────────────────────────────────────────────
+// ─── PALETTE ──────────────────────────────────────────────────────────────────
 const C = {
-  bg: "#070d1a",
-  card: "#0d1526",
-  cardHover: "#111d33",
-  border: "#1a2540",
-  borderLight: "#243050",
-  text: "#e2e8f0",
-  textMuted: "#64748b",
-  textDim: "#94a3b8",
-  passed: "#22c55e",
-  passedBg: "#052e16",
-  failed: "#ef4444",
-  failedBg: "#2a0a0a",
-  blocked: "#f59e0b",
-  blockedBg: "#2a1800",
-  pending: "#475569",
-  pendingBg: "#0f172a",
-  blue: "#3b82f6",
-  blueBg: "#0c1a3a",
-  purple: "#a855f7",
-  purpleBg: "#1a0a2a",
-  critical: "#ef4444",
-  high: "#f97316",
-  medium: "#3b82f6",
-  low: "#64748b",
+  bg: "#070d1a", card: "#0d1526", cardHover: "#111d33",
+  border: "#1a2540", borderLight: "#243050",
+  text: "#e2e8f0", textMuted: "#64748b", textDim: "#94a3b8",
+  passed: "#22c55e", passedBg: "#052e16",
+  failed: "#ef4444", failedBg: "#2a0a0a",
+  pending: "#475569", pendingBg: "#0f172a",
+  blue: "#3b82f6", blueBg: "#0c1a3a",
+  purple: "#a855f7", purpleBg: "#1a0a2a",
+  amber: "#f59e0b", amberBg: "#2a1800",
 };
 
-// ── INITIAL DATA ───────────────────────────────────────────────────────────
-const INITIAL_CASES = [
-  // AUTENTICAÇÃO E CADASTRO
-  { id:"AUTH-NEW-01", module:"Autenticação e Cadastro", title:"Tenant sem e-mail confirmado tenta logar — sistema bloqueia", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"AUTH-NEW-02", module:"Autenticação e Cadastro", title:"Login via Google OAuth redireciona para o dashboard do role correto", tipo:"Segurança", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"AUTH-NEW-03", module:"Autenticação e Cadastro", title:"Link de redefinição de senha expira após uso único", tipo:"Segurança", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"AUTH-NEW-04", module:"Autenticação e Cadastro", title:"Conta bloqueada após 3 tentativas erradas — UI exibe mensagem com tempo de desbloqueio", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"AUTH-NEW-05", module:"Autenticação e Cadastro", title:"Setup inicial salva logo, cor e label do profissional corretamente", tipo:"Funcional", prioridade:"Crítico", camadas:["E2E"], status:"pending" },
-  // CLIENTE
-  { id:"CL-NEW-01", module:"Cliente", title:"Cadastro com CPF duplicado — API rejeita e UI exibe erro inline no campo", tipo:"Funcional", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"CL-NEW-02", module:"Cliente", title:"Busca de paciente retorna resultado correto por nome, CPF e e-mail", tipo:"Funcional", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"CL-NEW-03", module:"Cliente", title:"Paciente inativado não aparece para novos agendamentos mas histórico permanece", tipo:"Funcional", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"CL-NEW-04", module:"Cliente", title:"Sistema registra data e hora de criação e última atualização automaticamente", tipo:"Funcional", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"CL-NEW-05", module:"Cliente", title:"Campos obrigatórios vazios — frontend não submete e backend rejeita se burlado", tipo:"Funcional", prioridade:"Médio", camadas:["Backend","Frontend"], status:"pending" },
-  // PORTAL DO PACIENTE
-  { id:"PP-NEW-01", module:"Portal do Paciente", title:"Paciente vê apenas seus próprios agendamentos — API bloqueia e UI não exibe links cruzados", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"PP-NEW-02", module:"Portal do Paciente", title:"Cancelamento bloqueado dentro do prazo mínimo — sistema informa o motivo", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PP-NEW-03", module:"Portal do Paciente", title:"Confirmação enviada por e-mail e SMS ao agendar ou cancelar consulta", tipo:"Funcional", prioridade:"Médio", camadas:["E2E"], status:"pending" },
-  { id:"PP-NEW-04", module:"Portal do Paciente", title:"Portal legível e funcional em tela de celular", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PP-NEW-05", module:"Portal do Paciente", title:"Dados sensíveis do paciente não aparecem na URL — backend não expõe em redirect e frontend não usa query params", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  // IA — RESUMO
-  { id:"IA-NEW-01", module:"IA — Resumo", title:"Resumo clínico gerado dentro do tempo limite — timeout exibido se exceder", tipo:"IA", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"IA-NEW-02", module:"IA — Resumo", title:"Falha na IA — API retorna erro tratado e UI exibe mensagem sem travar a tela", tipo:"Funcional", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  // IA — RISCO DE FALTA
-  { id:"IA-NEW-03", module:"IA — Risco de Falta", title:"Paciente sem histórico exibe mensagem clara de dados insuficientes", tipo:"IA", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"IA-NEW-04", module:"IA — Risco de Falta", title:"Previsão de no-show registra se acertou ou errou após a consulta ocorrer", tipo:"IA", prioridade:"Baixo", camadas:["Backend"], status:"pending" },
-  // IA — WHATSAPP
-  { id:"IA-NEW-05", module:"IA — WhatsApp", title:"Mensagem WhatsApp — backend substitui variáveis, frontend exibe preview e E2E valida o envio", tipo:"IA", prioridade:"Crítico", camadas:["Backend","Frontend","E2E"], status:"pending" },
-  { id:"IA-NEW-06", module:"IA — WhatsApp", title:"Gerador com contexto vazio solicita informações mínimas antes de gerar", tipo:"IA", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"IA-NEW-07", module:"IA — WhatsApp", title:"Histórico de mensagens geradas pela IA fica registrado e consultável", tipo:"Funcional", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  // ROLES — ADMIN
-  { id:"ROLES-ADMIN-01", module:"Roles — Admin", title:"Admin cria usuário com role médico — outros roles não conseguem", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-02", module:"Roles — Admin", title:"Admin edita e deleta usuário — campo is_superadmin é ignorado se enviado", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-03", module:"Roles — Admin", title:"Admin cria, edita e deleta filial — outros roles recebem 403", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-04", module:"Roles — Admin", title:"Deletar profissional — agendamentos futuros ficam em estado consistente", tipo:"Funcional", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-05", module:"Roles — Admin", title:"Admin altera configurações do tenant — outros roles bloqueados na API e sem item no menu", tipo:"Segurança", prioridade:"Alto", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-ADMIN-06", module:"Roles — Admin", title:"Admin faz upload e remove logo do tenant — recepcionista não vê essa opção", tipo:"Segurança", prioridade:"Médio", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-ADMIN-07", module:"Roles — Admin", title:"Admin gerencia assinatura — todos os outros roles são bloqueados", tipo:"Segurança", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-08", module:"Roles — Admin", title:"Admin ativa integração WhatsApp — recepcionista não acessa configuração", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-09", module:"Roles — Admin", title:"Admin acessa relatórios no plano Profissional — bloqueado no Starter", tipo:"Segurança", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-10", module:"Roles — Admin", title:"Convênios disponíveis no plano Profissional — bloqueados no Starter", tipo:"Segurança", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-11", module:"Roles — Admin", title:"Admin cria template de mensagem — médico e gestor recebem 403", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-ADMIN-12", module:"Roles — Admin", title:"Sidebar do admin exibe itens exclusivos — rotas bloqueadas no backend para outros roles", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-ADMIN-13", module:"Roles — Admin", title:"Admin cria médico, médico faz login e vê apenas menus do seu role", tipo:"Segurança", prioridade:"Crítico", camadas:["E2E"], status:"pending" },
-  { id:"ROLES-ADMIN-14", module:"Roles — Admin", title:"Admin exclui usuário ativo — sessão do usuário é encerrada imediatamente", tipo:"Segurança", prioridade:"Crítico", camadas:["E2E"], status:"pending" },
-  { id:"ROLES-ADMIN-15", module:"Roles — Admin", title:"Admin cadastra convênio e recepcionista consegue usá-lo no agendamento", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  // ROLES — GESTOR
-  { id:"ROLES-GESTOR-01", module:"Roles — Gestor", title:"Gestor visualiza agendamentos — não consegue criar nem cancelar", tipo:"Segurança", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-GESTOR-02", module:"Roles — Gestor", title:"Gestor acessa e edita prontuários — consegue assinar", tipo:"Funcional", prioridade:"Baixo", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-GESTOR-03", module:"Roles — Gestor", title:"Gestor tenta acessar pagamentos — API retorna 403 e item ausente no menu", tipo:"Segurança", prioridade:"Alto", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-GESTOR-04", module:"Roles — Gestor", title:"Gestor abre, comenta e fecha tickets de suporte", tipo:"Funcional", prioridade:"Baixo", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-GESTOR-05", module:"Roles — Gestor", title:"Gestor vê apenas as próprias notificações — não as de outros usuários", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-GESTOR-06", module:"Roles — Gestor", title:"Gestor tenta acessar relatórios — API retorna 403 e item ausente no menu em qualquer plano", tipo:"Segurança", prioridade:"Alto", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-GESTOR-07", module:"Roles — Gestor", title:"Gestor acessa resumo e gerador de mensagens via IA — retorna 200 sem restrição de role", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-GESTOR-08", module:"Roles — Gestor", title:"Gestor deleta paciente — UI exige confirmação e backend registra log de auditoria", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-GESTOR-09", module:"Roles — Gestor", title:"Importação CSV por gestor — valida formato, limite de tamanho e erros por linha", tipo:"Funcional", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-GESTOR-10", module:"Roles — Gestor", title:"Gestor não vê botões de criar ou cancelar agendamento na agenda", tipo:"Segurança", prioridade:"Crítico", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-GESTOR-11", module:"Roles — Gestor", title:"Gestor acessa tickets e notificações pela interface", tipo:"Funcional", prioridade:"Baixo", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-GESTOR-12", module:"Roles — Gestor", title:"Gestor importa CSV — interface exibe progresso e relatório de erros por linha", tipo:"Funcional", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-GESTOR-13", module:"Roles — Gestor", title:"Gestor monitora o dia inteiro sem conseguir criar agendamento nem acessar pagamentos", tipo:"Segurança", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  // ROLES — MÉDICO
-  { id:"ROLES-MEDICO-01", module:"Roles — Médico", title:"Médico tenta criar agendamento — bloqueado com 403", tipo:"Segurança", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-MEDICO-02", module:"Roles — Médico", title:"Médico atualiza status do agendamento — permitido para todos os roles", tipo:"Funcional", prioridade:"Baixo", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-MEDICO-03", module:"Roles — Médico", title:"Médico cria e assina prontuário vinculado ao agendamento", tipo:"Funcional", prioridade:"Baixo", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-MEDICO-04", module:"Roles — Médico", title:"Médico abre e fecha tickets de suporte", tipo:"Funcional", prioridade:"Baixo", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-MEDICO-05", module:"Roles — Médico", title:"Médico vê apenas as próprias notificações — não as de outros usuários", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-MEDICO-06", module:"Roles — Médico", title:"Médico tenta acessar pagamentos — API retorna 403 e item ausente no DOM", tipo:"Segurança", prioridade:"Alto", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-MEDICO-07", module:"Roles — Médico", title:"Médico usa IA básica sem restrição de role — frontend controla visibilidade por plano", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-MEDICO-08", module:"Roles — Médico", title:"Médico acessa no-show de agendamento de outro médico — API bloqueia e UI não exibe o botão", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-MEDICO-09", module:"Roles — Médico", title:"Médico deleta paciente — UI exige confirmação e backend registra log de auditoria", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-MEDICO-10", module:"Roles — Médico", title:"Médico importa CSV de pacientes — valida limite e erros por linha", tipo:"Funcional", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-MEDICO-11", module:"Roles — Médico", title:"Botão novo agendamento não existe no DOM para o médico", tipo:"Segurança", prioridade:"Crítico", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-MEDICO-12", module:"Roles — Médico", title:"Médico preenche prontuário com autocomplete de CID e assina em dois passos", tipo:"Funcional", prioridade:"Baixo", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-MEDICO-13", module:"Roles — Médico", title:"Botões de IA bloqueados visualmente no Starter — requisição não é enviada mesmo via DevTools", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-MEDICO-14", module:"Roles — Médico", title:"Médico acessa tickets e notificações pela interface", tipo:"Funcional", prioridade:"Baixo", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-MEDICO-15", module:"Roles — Médico", title:"Médico conduz atendimento completo com IA — do agendamento à assinatura do prontuário", tipo:"Funcional", prioridade:"Crítico", camadas:["E2E"], status:"pending" },
-  { id:"ROLES-MEDICO-16", module:"Roles — Médico", title:"Médico recebe notificação de solicitação de paciente e responde pelo sistema", tipo:"Funcional", prioridade:"Médio", camadas:["E2E"], status:"pending" },
-  // ROLES — RECEPCIONISTA
-  { id:"ROLES-RECEP-01", module:"Roles — Recepcionista", title:"Recepcionista cria e cancela agendamento — médico e gestor são bloqueados", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-02", module:"Roles — Recepcionista", title:"Recepcionista registra pagamento com convênio vinculado — médico não acessa", tipo:"Segurança", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-03", module:"Roles — Recepcionista", title:"Recepcionista cria, edita e deleta templates de mensagem — médico e gestor bloqueados", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-04", module:"Roles — Recepcionista", title:"Recepcionista cria campanha no plano Clínica — bloqueada nos planos inferiores", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-05", module:"Roles — Recepcionista", title:"Recepcionista envia confirmação WhatsApp — médico e gestor são bloqueados", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-06", module:"Roles — Recepcionista", title:"Recepcionista abre e comenta tickets de suporte", tipo:"Funcional", prioridade:"Baixo", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-07", module:"Roles — Recepcionista", title:"Recepcionista vê apenas as próprias notificações", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-08", module:"Roles — Recepcionista", title:"Recepcionista acessa relatórios no plano Profissional — bloqueada no Starter", tipo:"Segurança", prioridade:"Médio", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-09", module:"Roles — Recepcionista", title:"Recepcionista usa convênio cadastrado pelo admin no agendamento", tipo:"Funcional", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-10", module:"Roles — Recepcionista", title:"Importação CSV — duplicados relatados, nenhum dado sobrescrito silenciosamente", tipo:"Funcional", prioridade:"Alto", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-11", module:"Roles — Recepcionista", title:"Recepcionista acessa resumo de IA do paciente — avaliar se é intencional", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-RECEP-12", module:"Roles — Recepcionista", title:"Sidebar da recepcionista sem itens do admin — rotas /settings e /users bloqueadas no backend", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-RECEP-13", module:"Roles — Recepcionista", title:"Recepcionista cria agendamento com convênio pelo formulário", tipo:"Funcional", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-RECEP-14", module:"Roles — Recepcionista", title:"Recepcionista deleta template em uso — UI exibe aviso antes de confirmar", tipo:"Funcional", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-RECEP-15", module:"Roles — Recepcionista", title:"Recepcionista envia confirmação WhatsApp — status atualiza na tela sem reload", tipo:"Funcional", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-RECEP-16", module:"Roles — Recepcionista", title:"Importação CSV — preview com 5 linhas antes de confirmar e relatório de erros após", tipo:"Funcional", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"ROLES-RECEP-17", module:"Roles — Recepcionista", title:"Recepcionista agenda com convênio, envia confirmação e registra pagamento", tipo:"Funcional", prioridade:"Crítico", camadas:["E2E"], status:"pending" },
-  { id:"ROLES-RECEP-18", module:"Roles — Recepcionista", title:"Recepcionista cria campanha com template e admin cancela antes do envio", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  // ROLES — SEGURANÇA
-  { id:"ROLES-SEC-01", module:"Roles — Segurança", title:"Médico envia header X-Role: admin — backend ignora e bloqueia com 403", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-SEC-02", module:"Roles — Segurança", title:"Médico tenta ler notificação de outro usuário pelo ID — bloqueado", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-SEC-03", module:"Roles — Segurança", title:"Token do tenant A não acessa nenhum recurso do tenant B", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-SEC-04", module:"Roles — Segurança", title:"Rota sem token retorna 401 — frontend redireciona para login sem mostrar dados", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend","Frontend"], status:"pending" },
-  { id:"ROLES-SEC-05", module:"Roles — Segurança", title:"Deleção de paciente gera log com actor, recurso e timestamp — exigência LGPD", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-SEC-06", module:"Roles — Segurança", title:"Anonimização LGPD gera log rastreável — dado não pode ser recuperado", tipo:"Segurança", prioridade:"Crítico", camadas:["Backend"], status:"pending" },
-  { id:"ROLES-SEC-07", module:"Roles — Segurança", title:"Admin altera role de usuário — novo login reflete permissões atualizadas", tipo:"Segurança", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"ROLES-SEC-08", module:"Roles — Segurança", title:"Sessão expirada — backend invalida token e frontend redireciona para login", tipo:"Segurança", prioridade:"Alto", camadas:["Backend","Frontend"], status:"pending" },
-];
-
-const INITIAL_BUGS = [
-  {
-    id: "BUG-IA-01",
-    title: "IA acessível via API em qualquer plano — controle de plano existe só no frontend",
-    severity: "Crítico",
-    module: "IA — Todos os endpoints",
-    description: "POST /ai/patient-summary com token válido em tenant Starter via Postman → retorna 200. Esperado: 403.",
-    status: "open",
-    date: "16/04/2026",
-  },
-  {
-    id: "BUG-IA-02",
-    title: "Busca semântica em prontuários acessível nos planos Starter e Profissional via API",
-    severity: "Crítico",
-    module: "IA — Busca semântica",
-    description: "GET /ai/medical-records/search em tenant Profissional via API direta → 200. Esperado: 403 (funcionalidade do plano Clínica).",
-    status: "open",
-    date: "16/04/2026",
-  },
-  {
-    id: "BUG-IA-03",
-    title: "Médico e gestor conseguem ativar e desativar o assistente WhatsApp do tenant",
-    severity: "Crítico",
-    module: "IA — WhatsApp assistant",
-    description: "POST /ai/whatsapp-assistant/toggle com token de médico → 200. Apenas admin deveria controlar o assistente do tenant.",
-    status: "open",
-    date: "16/04/2026",
-  },
-];
-
-const SEED_BUGS_RECEP = [
-  // ── CADASTRO DE PACIENTE ──────────────────────────────────────────────────
-  {
-    id: "BUG-PAC-01",
-    title: "Data de nascimento com ano inválido é aceita e salva, mas dado não persiste",
-    severity: "Alto",
-    module: "Cliente",
-    description: "Preencher data de nascimento com ano inválido (ex: 9999 ou 0001) → sistema salva sem erro → ao reabrir o cadastro o campo aparece vazio. Esperado: validação impedir o envio.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-PAC-02",
-    title: "Campo CPF não está sendo validado no formulário de novo paciente",
-    severity: "Crítico",
-    module: "Cliente",
-    description: "Inserir CPF com dígitos inválidos ou sequência fictícia (ex: 111.111.111-11) → sistema aceita e salva sem erro. Esperado: validação de CPF (dígitos verificadores) com mensagem de erro.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-PAC-03",
-    title: "Duplicidade de cadastro permitida — mesmo nome e CPF cadastrados duas vezes",
-    severity: "Crítico",
-    module: "Cliente",
-    description: "Cadastrar paciente com nome e CPF já existentes → sistema salva sem aviso. Registro duplicado aparece na listagem e no banco de dados. Esperado: bloqueio com mensagem de duplicidade.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-PAC-04",
-    title: "Filtro por CPF não está funcionando",
-    severity: "Alto",
-    module: "Cliente",
-    description: "Digitar CPF de paciente existente no campo de busca → listagem não retorna o paciente. Filtros por nome e telefone funcionam normalmente.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-PAC-05",
-    title: "Busca sem resultados não exibe nenhuma mensagem ao usuário",
-    severity: "Médio",
-    module: "Cliente",
-    description: "Buscar termo inexistente na listagem de pacientes → tela fica em branco sem nenhuma mensagem de 'nenhum resultado encontrado'. Esperado: mensagem informativa.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-PAC-06",
-    title: "Label do campo some ao clicar — usuário perde referência do campo",
-    severity: "Médio",
-    module: "Cliente",
-    description: "Ao clicar em campos como 'CPF' no formulário de novo paciente, a label desaparece completamente. Sem placeholder ou label flutuante, o usuário não sabe o que está preenchendo. Afeta pelo menos o campo CPF.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-PAC-07",
-    title: "Botões 'Cancelar' e 'Criar paciente' somem em telas com zoom padrão (100%)",
-    severity: "Alto",
-    module: "Cliente",
-    description: "Com zoom do navegador em 100%, os botões de ação do modal de novo paciente ficam fora da área visível. Apenas com zoom em 80% os botões aparecem. Esperado: modal responsivo independente do zoom.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  // ── DEPENDENTE ────────────────────────────────────────────────────────────
-  {
-    id: "BUG-DEP-01",
-    title: "Duplicidade de dependente com mesmo nome e CPF não é bloqueada",
-    severity: "Crítico",
-    module: "Cliente",
-    description: "Cadastrar dependente com nome e CPF já vinculados ao mesmo paciente → sistema permite e salva o duplicado na aplicação e no banco. Esperado: validação de duplicidade com mensagem de erro.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  // ── IMPORTAÇÃO CSV ────────────────────────────────────────────────────────
-  {
-    id: "BUG-CSV-01",
-    title: "Importação de CSV falha em todas as tentativas — erro sem identificação da linha/campo",
-    severity: "Crítico",
-    module: "Roles — Recepcionista",
-    description: "Arquivo CSV criado conforme especificação → todas as tentativas retornam erro. Mensagem exibida: 'Erro ao validar o arquivo' sem identificar qual linha ou campo está incorreto. Dificulta a correção pelo usuário.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-CSV-02",
-    title: "Mensagem de erro na importação CSV com cor invisível — texto ilegível",
-    severity: "Alto",
-    module: "Roles — Recepcionista",
-    description: "Ao importar arquivo inválido, a mensagem de erro é exibida com uma cor de texto que não contrasta com o fundo, tornando o texto ilegível. Esperado: texto de erro em cor visível (ex: vermelho sobre fundo claro/escuro com contraste adequado).",
-    status: "open",
-    date: "22/04/2026",
-  },
-  // ── EDITAR PACIENTE ───────────────────────────────────────────────────────
-  {
-    id: "BUG-EDIT-01",
-    title: "Editar paciente — campos obrigatórios não estão marcados como obrigatórios",
-    severity: "Médio",
-    module: "Cliente",
-    description: "No formulário de edição de paciente, campos que deveriam ser obrigatórios (ex: nome) não apresentam indicação visual nem bloqueiam o envio quando vazios. Deve espelhar o comportamento do formulário de criação.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-EDIT-02",
-    title: "Editar paciente — validação de CEP, CPF e data de nascimento não implementada",
-    severity: "Alto",
-    module: "Cliente",
-    description: "No formulário de edição, os campos CEP, CPF e data de nascimento não possuem validação de formato/conteúdo. É possível salvar valores inválidos. Deve ter o mesmo comportamento do formulário de criação.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  // ── ATENDIMENTOS ─────────────────────────────────────────────────────────
-  {
-    id: "BUG-ATEND-01",
-    title: "Atendimentos — label dos comentários com fonte invisível",
-    severity: "Médio",
-    module: "Roles — Recepcionista",
-    description: "Na seção de atendimentos, ao incluir um comentário, a fonte das labels não está visível (provavelmente cor igual ao fundo). O usuário não consegue ler os dados preenchidos.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  // ── PRONTUÁRIOS ───────────────────────────────────────────────────────────
-  {
-    id: "BUG-PRONT-01",
-    title: "Prontuários — modal 'Ver detalhes' não redimensiona, botões Editar e Fechar ficam invisíveis",
-    severity: "Alto",
-    module: "Roles — Médico",
-    description: "Preencher prontuário completo e salvar → clicar em 'Ver detalhes' → modal abre sem respeitar o tamanho da tela → botões 'Editar' e 'Fechar' ficam fora da área visível. Impossível interagir sem scroll ou redimensionamento manual.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  {
-    id: "BUG-PRONT-02",
-    title: "Prontuários — botão 'Editar' não executa nenhuma ação",
-    severity: "Crítico",
-    module: "Roles — Médico",
-    description: "Dentro do modal de detalhes do prontuário, clicar no botão 'Editar' não abre formulário de edição nem dispara nenhuma ação visível. Funcionalidade de edição de prontuário completamente inoperante.",
-    status: "open",
-    date: "22/04/2026",
-  },
-  // ── DOCUMENTOS ────────────────────────────────────────────────────────────
-  {
-    id: "BUG-DOC-01",
-    title: "Upload de documento PDF retorna erro JSON inesperado",
-    severity: "Crítico",
-    module: "Cliente",
-    description: "Tentar incluir documento no formato .pdf → aplicação retorna: Unexpected token '<', \"<br /> <b>\"... is not valid JSON. Indica que o servidor retorna HTML (provavelmente erro 500) em vez de JSON. Upload de PDF completamente bloqueado.",
-    status: "open",
-    date: "22/04/2026",
-  },
-];
-
-// Casos vinculados a testes automatizados — merged on load, nunca sobrescreve
-const SEED_CASES_AUTO = [
-  {
-    id: "PAC-AUTO-FILTRO-NOME",
-    module: "Cliente",
-    title: "Filtro por nome parcial retorna pacientes correspondentes",
-    tipo: "Funcional",
-    prioridade: "Alto",
-    camada: "E2E",
-    status: "pending",
-  },
-];
-
-// Casos mapeados — Módulo Pacientes | Role: recepcionista
-const SEED_CASES_PACIENTES = [
-  // ── TELA PRINCIPAL ────────────────────────────────────────────────────────
-  { id:"PAC-TELA-FILTRO-NOME", module:"Pacientes", role:"recepcionista", title:"Tela principal | Validar filtro por nome", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-TELA-FILTRO-CPF",  module:"Pacientes", role:"recepcionista", title:"Tela principal | Validar filtro por CPF",  tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-TELA-FILTRO-TEL",  module:"Pacientes", role:"recepcionista", title:"Tela principal | Validar filtro por Telefone", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-TELA-RETORNO",     module:"Pacientes", role:"recepcionista", title:"Tela principal | Validar retorno correto dos resultados", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-TELA-VAZIO",       module:"Pacientes", role:"recepcionista", title:"Tela principal | Buscar termo inexistente retorna lista vazia", tipo:"Funcional", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-TELA-LIMPAR",      module:"Pacientes", role:"recepcionista", title:"Tela principal | Limpar busca restaura listagem original", tipo:"Funcional", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-TELA-LISTAGEM",    module:"Pacientes", role:"recepcionista", title:"Tela principal | Listagem reflete alterações (criação, edição, exclusão)", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  // ── NOVO PACIENTE — DADOS PESSOAIS ────────────────────────────────────────
-  { id:"PAC-NOVO-CRIAR",       module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | Criar paciente com dados válidos e persistência no banco", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-NOVO-LISTAGEM",    module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | Novo paciente aparece na listagem", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-NOVO-OBRIGATORIO", module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | Campos obrigatórios impedem envio quando vazios", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-NOVO-CPF-INVALIDO",module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | CPF inválido exibe mensagem de erro", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-NOVO-CPF-DUPLO",   module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | CPF duplicado exibe erro ao tentar cadastrar", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-NOVO-NASC-FUTURA", module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | Data de nascimento futura não é permitida", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-NOVO-TEL-INVALIDO",module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | Telefone inválido não é aceito", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-NOVO-DUPLICIDADE", module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | Aplicação não aceita duplicidade de CPF e Nome", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-NOVO-EMAIL",       module:"Pacientes", role:"recepcionista", title:"Novo paciente | Dados Pessoais | Campo E-mail aceita apenas valores com parâmetros corretos", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  // ── NOVO PACIENTE — ENDEREÇO ──────────────────────────────────────────────
-  { id:"PAC-END-SEM",          module:"Pacientes", role:"recepcionista", title:"Novo paciente | Endereço | Criar paciente sem endereço (fluxo válido)", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-END-COMPLETO",     module:"Pacientes", role:"recepcionista", title:"Novo paciente | Endereço | Criar paciente com endereço completo", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-END-PERSIST",      module:"Pacientes", role:"recepcionista", title:"Novo paciente | Endereço | Validar persistência dos dados de endereço", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-END-CEP",          module:"Pacientes", role:"recepcionista", title:"Novo paciente | Endereço | Validar comportamento ao preencher CEP", tipo:"Funcional", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-END-INVALIDO",     module:"Pacientes", role:"recepcionista", title:"Novo paciente | Endereço | Validar comportamento com dados de endereço inválidos", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  // ── NOVO DEPENDENTE ───────────────────────────────────────────────────────
-  { id:"PAC-DEP-CRIAR",        module:"Pacientes", role:"recepcionista", title:"Novo dependente | Criar dependente vinculado a um paciente", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-DEP-LISTAGEM",     module:"Pacientes", role:"recepcionista", title:"Novo dependente | Dependente aparece corretamente na listagem", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-DEP-VINCULO",      module:"Pacientes", role:"recepcionista", title:"Novo dependente | Dependente não pode ser vinculado se já existe vínculo", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-DEP-SEM-RESP",     module:"Pacientes", role:"recepcionista", title:"Novo dependente | Impedir criação de dependente sem responsável", tipo:"Funcional", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-DEP-CPF-INVALIDO", module:"Pacientes", role:"recepcionista", title:"Novo dependente | CPF inválido exibe mensagem de erro", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-DEP-CPF-DUPLO",    module:"Pacientes", role:"recepcionista", title:"Novo dependente | CPF duplicado exibe erro ao tentar cadastrar", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-DEP-NASC-FUTURA",  module:"Pacientes", role:"recepcionista", title:"Novo dependente | Data de nascimento futura não é permitida", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  // ── BOTÃO AÇÃO — EDITAR PACIENTE ──────────────────────────────────────────
-  { id:"PAC-EDIT-DADOS",       module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | Editar todos os dados do paciente e validar persistência", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-EDIT-OBRIGATORIO", module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | Campos obrigatórios impedem envio quando vazios", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-EDIT-CPF-INVALIDO",module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | CPF inválido exibe mensagem de erro", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-EDIT-CPF-DUPLO",   module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | CPF duplicado exibe erro ao tentar salvar", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-EDIT-NASC-FUTURA", module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | Data de nascimento futura não é permitida", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-EDIT-TEL-INVALIDO",module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | Telefone inválido não é aceito", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-EDIT-DUPLICIDADE", module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | Duplicidade de CPF e Nome não é aceita", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-EDIT-EMAIL",       module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | Campo E-mail aceita apenas valores com parâmetros corretos", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-EDIT-END",         module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | Editar endereço completo e validar persistência", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-EDIT-CEP",         module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar | Validar comportamento ao preencher CEP na edição", tipo:"Funcional", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  // ── BOTÃO AÇÃO — EDITAR DEPENDENTE ───────────────────────────────────────
-  { id:"PAC-EDITDEP-DADOS",       module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar Dependente | Editar todos os dados e validar persistência", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-EDITDEP-OBRIGATORIO", module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar Dependente | Campos obrigatórios impedem envio quando vazios", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-EDITDEP-CPF-INVALIDO",module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar Dependente | CPF inválido exibe mensagem de erro", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-EDITDEP-CPF-DUPLO",   module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar Dependente | CPF duplicado exibe erro ao tentar salvar", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-EDITDEP-NASC-FUTURA", module:"Pacientes", role:"recepcionista", title:"Botão Ação | Editar Dependente | Data de nascimento futura não é permitida", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  // ── BOTÃO AÇÃO — VER HISTÓRICO ────────────────────────────────────────────
-  { id:"PAC-HIST-VER",            module:"Pacientes", role:"recepcionista", title:"Botão Ação | Ver Histórico | Levantar e validar cenários do histórico do paciente", tipo:"Funcional", prioridade:"Médio", camadas:["E2E"], status:"blocked" },
-  // ── BOTÃO AÇÃO — ADICIONAR DEPENDENTE ────────────────────────────────────
-  { id:"PAC-ACAO-DEP-CRIAR",        module:"Pacientes", role:"recepcionista", title:"Botão Ação | Adicionar Dependente | Criar dependente pelo botão ação", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-ACAO-DEP-OBRIGATORIO",  module:"Pacientes", role:"recepcionista", title:"Botão Ação | Adicionar Dependente | Campos obrigatórios impedem envio quando vazios", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-ACAO-DEP-CPF-INVALIDO", module:"Pacientes", role:"recepcionista", title:"Botão Ação | Adicionar Dependente | CPF inválido exibe mensagem de erro", tipo:"Interface", prioridade:"Alto", camadas:["Frontend"], status:"pending" },
-  { id:"PAC-ACAO-DEP-CPF-DUPLO",    module:"Pacientes", role:"recepcionista", title:"Botão Ação | Adicionar Dependente | CPF duplicado exibe erro ao tentar cadastrar", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-  { id:"PAC-ACAO-DEP-NASC-FUTURA",  module:"Pacientes", role:"recepcionista", title:"Botão Ação | Adicionar Dependente | Data de nascimento futura não é permitida", tipo:"Interface", prioridade:"Médio", camadas:["Frontend"], status:"pending" },
-  // ── BOTÃO AÇÃO — EXCLUIR ─────────────────────────────────────────────────
-  { id:"PAC-EXCLUIR", module:"Pacientes", role:"recepcionista", title:"Botão Ação | Excluir | Paciente some da lista e banco registra mudança de status e timestamp", tipo:"Funcional", prioridade:"Alto", camadas:["E2E"], status:"pending" },
-];
-
-const MODULES_ORDER = [
-  "Autenticação e Cadastro",
-  "Cliente",
-  "Pacientes",
-  "Portal do Paciente",
-  "IA — Resumo",
-  "IA — Risco de Falta",
-  "IA — WhatsApp",
-  "Roles — Admin",
-  "Roles — Gestor",
-  "Roles — Médico",
-  "Roles — Recepcionista",
-  "Roles — Segurança",
-];
-
-const MODULE_ABBREV = {
-  "Autenticação e Cadastro": "Auth",
-  "Cliente": "Cliente",
-  "Portal do Paciente": "Portal",
-  "IA — Resumo": "IA·Resumo",
-  "IA — Risco de Falta": "IA·Risco",
-  "IA — WhatsApp": "IA·WA",
-  "Roles — Admin": "Admin",
-  "Roles — Gestor": "Gestor",
-  "Roles — Médico": "Médico",
-  "Roles — Recepcionista": "Recep.",
-  "Roles — Segurança": "Segurança",
+const MANUAL_STATUS_CYCLE = ["pendente", "aguarda", "passou", "falhou"];
+const MANUAL_STATUS_CFG = {
+  pendente: { label: "Pendente",         color: C.pending, bg: C.pendingBg, Icon: Clock },
+  aguarda:  { label: "Aguarda resposta", color: C.amber,   bg: C.amberBg,  Icon: MessageSquare },
+  passou:   { label: "Passou ✓",         color: C.passed,  bg: C.passedBg,  Icon: CheckCircle },
+  falhou:   { label: "Falhou ✗",         color: C.failed,  bg: C.failedBg,  Icon: XCircle },
 };
-
-const STATUS_CYCLE = ["pending", "passed", "failed", "blocked"];
-
-const STATUS_CFG = {
-  pending: { label: "Pendente",  color: C.pending, bg: C.pendingBg, Icon: Clock },
-  passed:  { label: "Passou ✓",  color: C.passed,  bg: C.passedBg,  Icon: CheckCircle },
-  failed:  { label: "Falhou ✗",  color: C.failed,  bg: C.failedBg,  Icon: XCircle },
-  blocked: { label: "Bloqueado", color: C.blocked, bg: C.blockedBg, Icon: AlertCircle },
-};
-
-const PRIO_CFG = {
-  "Crítico": { color: C.critical, bg: "#2a0a0a" },
-  "Alto":    { color: C.high,     bg: "#2a1200" },
-  "Médio":   { color: C.medium,   bg: "#0c1a3a" },
-  "Baixo":   { color: C.low,      bg: "#1a1a1a" },
-};
-
 const TIPO_CFG = {
-  "Funcional": { color: "#22c55e", bg: "#052e16" },
-  "Segurança": { color: "#f97316", bg: "#2a1200" },
-  "IA":        { color: "#a855f7", bg: "#1a0a2a" },
-  "Carga":     { color: "#06b6d4", bg: "#0a2a2a" },
-  "Interface": { color: "#3b82f6", bg: "#0c1a3a" },
+  "Validação de campo": { color: "#3b82f6", bg: "#0c1a3a" },
+  "Regra de negócio":   { color: "#f59e0b", bg: "#2a1800" },
+  "Interface":          { color: "#a855f7", bg: "#1a0a2a" },
+  "Funcional":          { color: "#22c55e", bg: "#052e16" },
 };
-
-const CAMADA_CFG = {
-  "Backend":  { color: "#06b6d4", bg: "#0a2a2a" },
-  "Frontend": { color: "#a855f7", bg: "#1a0a2a" },
-  "E2E":      { color: "#f59e0b", bg: "#2a1800" },
-};
-
 const SEV_CFG = {
-  "Crítico": { color: C.critical, bg: "#2a0a0a" },
-  "Alto":    { color: C.high,     bg: "#2a1200" },
-  "Médio":   { color: C.medium,   bg: "#0c1a3a" },
-  "Baixo":   { color: C.low,      bg: "#1a1a1a" },
+  "Crítico": { color: "#ef4444", bg: "#2a0a0a" },
+  "Alto":    { color: "#f97316", bg: "#2a1200" },
+  "Médio":   { color: "#3b82f6", bg: "#0c1a3a" },
+  "Baixo":   { color: "#64748b", bg: "#1a1a1a" },
 };
+const TIPOS = ["Validação de campo", "Regra de negócio", "Interface", "Funcional"];
+const STORAGE_KEY = "qa-dashboard-v3";
 
-// ── STORAGE ────────────────────────────────────────────────────────────────
-const STORAGE_KEY = "qa-dashboard-v2";
+// ─── INITIAL DATA ─────────────────────────────────────────────────────────────
+const INITIAL_ROLES = [
+  {
+    id: "recepcionista", label: "Recepcionista", color: "#3b82f6",
+    funcionalidades: [
+      {
+        id: "f-cadastro-paciente", label: "Cadastro de Paciente",
+        e2e: [
+          { id: "PAC-E2E-01", title: "Cadastrar novo paciente com dados válidos e verificar persistência", status: "pendente" },
+          { id: "PAC-E2E-02", title: "Editar paciente existente e confirmar atualização na listagem", status: "pendente" },
+          { id: "PAC-E2E-03", title: "Inativar paciente e validar ausência em novos agendamentos", status: "pendente" },
+          { id: "PAC-E2E-04", title: "Buscar paciente por nome, CPF e e-mail", status: "pendente" },
+        ],
+        manual: [
+          { id: "MT-PAC-01", contexto: "Formulário novo paciente", title: "Campo Nome — obrigatório — bloqueia envio se vazio", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-02", contexto: "Formulário novo paciente", title: "Campo CPF — formato inválido exibe erro inline", tipo: "Validação de campo", status: "falhou", bugId: "BUG-AUTO-MT-PAC-02", images: [], note: "" },
+          { id: "MT-PAC-03", contexto: "Formulário novo paciente", title: "Campo CPF — duplicado bloqueia cadastro com mensagem de erro", tipo: "Validação de campo", status: "falhou", bugId: "BUG-AUTO-MT-PAC-03", images: [], note: "" },
+          { id: "MT-PAC-04", contexto: "Formulário novo paciente", title: "Campo Data de Nascimento — data futura é rejeitada com mensagem", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-05", contexto: "Formulário novo paciente", title: "Campo Data de Nascimento — ano inválido (ex: 9999) é rejeitado e não persiste", tipo: "Validação de campo", status: "falhou", bugId: "BUG-AUTO-MT-PAC-05", images: [], note: "" },
+          { id: "MT-PAC-06", contexto: "Formulário novo paciente", title: "Campo Telefone — formato inválido exibe erro inline", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-07", contexto: "Formulário novo paciente", title: "Campo E-mail — formato inválido exibe erro inline", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-08", contexto: "Formulário novo paciente", title: "Campo E-mail — não obrigatório — envia sem preencher", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-09", contexto: "Formulário novo paciente", title: "Labels dos campos não somem ao clicar — usuário mantém referência visual", tipo: "Interface", status: "falhou", bugId: "BUG-AUTO-MT-PAC-09", images: [], note: "" },
+          { id: "MT-PAC-10", contexto: "Formulário novo paciente", title: "Botões 'Cancelar' e 'Criar paciente' visíveis com zoom do navegador em 100%", tipo: "Interface", status: "falhou", bugId: "BUG-AUTO-MT-PAC-10", images: [], note: "" },
+          { id: "MT-PAC-11", contexto: "Tela principal", title: "Busca por CPF retorna o paciente correto na listagem", tipo: "Funcional", status: "falhou", bugId: "BUG-AUTO-MT-PAC-11", images: [], note: "" },
+          { id: "MT-PAC-12", contexto: "Tela principal", title: "Busca sem resultados exibe mensagem informativa ao usuário", tipo: "Funcional", status: "falhou", bugId: "BUG-AUTO-MT-PAC-12", images: [], note: "" },
+          { id: "MT-PAC-13", contexto: "Tela principal", title: "Limpar filtros restaura a listagem completa de pacientes", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-14", contexto: "Tela principal", title: "Validar filtro por \"nome\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-15", contexto: "Tela principal", title: "Validar filtro por \"Telefone\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-16", contexto: "Tela principal", title: "Validar retorno correto dos resultados", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-17", contexto: "Tela principal", title: "Validar que a listagem reflete alterações (criação, edição, exclusão)", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-18", contexto: "Novo paciente > Dados Pessoais", title: "Criar paciente com dados válidos e persistência de dados no banco de dados", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-19", contexto: "Novo paciente > Dados Pessoais", title: "Validar que o novo paciente aparece na listagem", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-20", contexto: "Novo paciente > Dados Pessoais", title: "Campos obrigatórios impedem envio quando vazios", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-21", contexto: "Novo paciente > Dados Pessoais", title: "Aplicação não aceita duplicidade de CPF e Nome", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-22", contexto: "Novo paciente > Dados Pessoais", title: "Validar campo E-mail somente com formatos válidos com os parâmetros corretos", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-PAC-23", contexto: "Novo paciente > Dados Pessoais", title: "Ao incluir um paciente menor de idade, a aplicação deve solicitar o vínculo de um responsável", tipo: "Regra de negócio", status: "aguarda", bugId: null, images: [], note: "", comments: [] },
+          { id: "MT-END-01", contexto: "Novo paciente > Endereço", title: "Criar paciente sem endereço (fluxo válido)", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-END-02", contexto: "Novo paciente > Endereço", title: "Criar paciente com endereço completo", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-END-03", contexto: "Novo paciente > Endereço", title: "Validar persistência dos dados de endereço", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-END-04", contexto: "Novo paciente > Endereço", title: "Validar comportamento ao preencher CEP (quando aplicável)", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-END-05", contexto: "Novo paciente > Endereço", title: "Validar comportamento com dados inválidos", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-DEP-01", contexto: "Dependente", title: "Dependente com mesmo nome e CPF não é aceito — duplicidade bloqueada", tipo: "Validação de campo", status: "falhou", bugId: "BUG-AUTO-MT-DEP-01", images: [], note: "" },
+          { id: "MT-DEP-02", contexto: "Novo dependente", title: "Criar dependente vinculado a um paciente", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-DEP-03", contexto: "Novo dependente", title: "Validar que o dependente aparece corretamente", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-DEP-04", contexto: "Novo dependente", title: "Validar que um dependente não pode ser vinculado se já existir vínculo", tipo: "Regra de negócio", status: "aguarda", bugId: null, images: [], note: "", comments: [] },
+          { id: "MT-DEP-05", contexto: "Novo dependente", title: "Impedir criação de dependente sem responsável", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-DEP-06", contexto: "Novo dependente", title: "CPF inválido exibe mensagem de erro", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-DEP-07", contexto: "Novo dependente", title: "CPF duplicado exibe erro ao tentar cadastrar", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-DEP-08", contexto: "Novo dependente", title: "Data de nascimento futura não é permitida", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-ACO-01", contexto: "Botão Ação", title: "Editar todos os dados de um paciente e validar a persistência dos dados na tela e no banco de dados", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-ACO-02", contexto: "Botão Ação", title: "Editar todos os dados de um dependente e validar a persistência dos dados na tela e no banco de dados", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+        ],
+        bugs: [
+          { id: "BUG-AUTO-MT-PAC-02", title: "[AUTO] Campo CPF — formato inválido exibe erro inline", severity: "Crítico", status: "open", mtId: "MT-PAC-02", images: [], comments: [], date: "22/04/2026", description: "Inserir CPF com dígitos inválidos (ex: 111.111.111-11) → sistema aceita e salva sem erro. Esperado: validação de CPF com mensagem de erro." },
+          { id: "BUG-AUTO-MT-PAC-03", title: "[AUTO] Campo CPF — duplicado bloqueia cadastro com mensagem de erro", severity: "Crítico", status: "open", mtId: "MT-PAC-03", images: [], comments: [], date: "22/04/2026", description: "Cadastrar paciente com CPF já existente → sistema salva sem aviso. Registro duplicado aparece na listagem." },
+          { id: "BUG-AUTO-MT-PAC-05", title: "[AUTO] Campo Data de Nascimento — ano inválido não persiste", severity: "Alto", status: "open", mtId: "MT-PAC-05", images: [], comments: [], date: "22/04/2026", description: "Preencher data de nascimento com ano inválido (ex: 9999) → sistema salva sem erro → ao reabrir o campo aparece vazio." },
+          { id: "BUG-AUTO-MT-PAC-09", title: "[AUTO] Labels dos campos somem ao clicar", severity: "Médio", status: "open", mtId: "MT-PAC-09", images: [], comments: [], date: "22/04/2026", description: "Ao clicar em campos como CPF no formulário, a label desaparece completamente." },
+          { id: "BUG-AUTO-MT-PAC-10", title: "[AUTO] Botões somem em zoom 100%", severity: "Alto", status: "open", mtId: "MT-PAC-10", images: [], comments: [], date: "22/04/2026", description: "Com zoom em 100%, os botões do modal ficam fora da área visível. Visíveis apenas com zoom em 80%." },
+          { id: "BUG-AUTO-MT-PAC-11", title: "[AUTO] Filtro por CPF não funciona", severity: "Alto", status: "open", mtId: "MT-PAC-11", images: [], comments: [], date: "22/04/2026", description: "Digitar CPF existente no campo de busca → listagem não retorna o paciente." },
+          { id: "BUG-AUTO-MT-PAC-12", title: "[AUTO] Busca sem resultados não exibe mensagem", severity: "Médio", status: "open", mtId: "MT-PAC-12", images: [], comments: [], date: "22/04/2026", description: "Buscar termo inexistente → tela fica em branco sem mensagem informativa." },
+          { id: "BUG-AUTO-MT-DEP-01", title: "[AUTO] Dependente duplicado não é bloqueado", severity: "Crítico", status: "open", mtId: "MT-DEP-01", images: [], comments: [], date: "22/04/2026", description: "Cadastrar dependente com nome e CPF já vinculados ao mesmo paciente → sistema permite e salva o duplicado." },
+        ],
+      },
+      {
+        id: "f-financeiro", label: "Financeiro",
+        e2e: [
+          { id: "FIN-E2E-01", title: "Registrar pagamento com dados válidos e verificar persistência", status: "pendente" },
+          { id: "FIN-E2E-02", title: "Editar pagamento existente e confirmar atualização", status: "pendente" },
+          { id: "FIN-E2E-03", title: "Filtrar pagamentos por paciente e limpar filtro", status: "pendente" },
+        ],
+        manual: [
+          { id: "MT-FIN-01", contexto: "Formulário pagamento", title: "Campo Valor — máscara monetária é aplicada durante a digitação", tipo: "Validação de campo", status: "falhou", bugId: "BUG-AUTO-MT-FIN-01", images: [], note: "" },
+          { id: "MT-FIN-02", contexto: "Formulário pagamento", title: "Campo Valor — valor estourante (ex: 9999999999) não quebra a aplicação", tipo: "Validação de campo", status: "falhou", bugId: "BUG-AUTO-MT-FIN-02", images: [], note: "" },
+          { id: "MT-FIN-03", contexto: "Formulário pagamento", title: "Campo Data — ao editar pagamento o campo retorna com a data preenchida", tipo: "Validação de campo", status: "falhou", bugId: "BUG-AUTO-MT-FIN-03", images: [], note: "" },
+          { id: "MT-FIN-04", contexto: "Formulário pagamento", title: "Campo Valor — obrigatório — bloqueia envio se vazio", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-05", contexto: "Tela principal", title: "Filtro por nome de paciente — limpar filtro restaura a listagem completa", tipo: "Funcional", status: "falhou", bugId: "BUG-AUTO-MT-FIN-05", images: [], note: "" },
+          { id: "MT-FIN-06", contexto: "Tela principal", title: "Registro criado aparece na listagem com todos os dados corretos", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-07", contexto: "Regras", title: "Pagamento com status 'pago' pode ser editado?", tipo: "Regra de negócio", status: "aguarda", bugId: null, images: [], note: "", comments: [] },
+          { id: "MT-FIN-08", contexto: "Regras", title: "Pagamento com status 'pago' pode ser excluído?", tipo: "Regra de negócio", status: "aguarda", bugId: null, images: [], note: "", comments: [] },
+          { id: "MT-FIN-09", contexto: "Regras", title: "Ao selecionar convênio como forma de pagamento — campo convênio se torna obrigatório?", tipo: "Regra de negócio", status: "aguarda", bugId: null, images: [], note: "", comments: [] },
+          { id: "MT-FIN-10", contexto: "Novo pagamento", title: "Inclusão de um novo pagamento com sucesso — verificar persistência dos dados — validar no banco de dados", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-11", contexto: "Novo pagamento", title: "Validar valor negativo no campo \"Valor\"", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-12", contexto: "Novo pagamento", title: "Validar campos obrigatórios", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-13", contexto: "Novo pagamento", title: "Validar campo \"Vencimento\" ao incluir uma data e salvar", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-14", contexto: "Novo pagamento", title: "Validar todos os filtros da tela principal", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-15", contexto: "Novo pagamento", title: "Validar exclusão", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-16", contexto: "Layout", title: "Validar comportamento da tela na abertura do modal", tipo: "Interface", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-17", contexto: "Edição", title: "Edição de dados do campo \"data vencimento\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-18", contexto: "Edição", title: "Edição de dados do paciente", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-19", contexto: "Edição", title: "Edição de dados do status ao mudar o status do pagamento", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-20", contexto: "Edição", title: "Edição de dados do campo \"forma de pagamento\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-21", contexto: "Tela principal", title: "Editar os campos de pagamento e validar o comportamento sendo refletido na tela principal", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-22", contexto: "Filtros", title: "Validar filtro por paciente", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-23", contexto: "Filtros", title: "Validar filtro por todos os status (Pendente, pago, parcial e reembolso)", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-24", contexto: "Filtros", title: "Validar filtro por todas as formas (dinheiro, cartão de crédito, cartão de débito, pix, convênio e outros)", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-25", contexto: "Filtros", title: "Validar filtro por data", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-26", contexto: "Tela principal", title: "Validar a consistência dos dados nos campos \"Total geral\", \"Recebimento\" e pendente", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-27", contexto: "Tela principal", title: "Ao modificar um pagamento do status pendente para pago, verificar se o valor soma no campo \"Recebidos\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-28", contexto: "Tela principal", title: "Ao excluir um pagamento, validar que o campo Recebido altera o valor", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-FIN-29", contexto: "Tela principal", title: "Validar a ação do botão relatórios", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+        ],
+        bugs: [
+          { id: "BUG-AUTO-MT-FIN-01", title: "[AUTO] Campo Valor sem máscara monetária", severity: "Alto", status: "open", mtId: "MT-FIN-01", images: [], comments: [], date: "22/04/2026", description: "Campo valor no formulário de pagamento não aplica máscara monetária." },
+          { id: "BUG-AUTO-MT-FIN-02", title: "[AUTO] Valor estourante quebra a aplicação", severity: "Crítico", status: "open", mtId: "MT-FIN-02", images: [], comments: [], date: "22/04/2026", description: "Inserir valor extremamente alto → aplicação quebra ou comportamento inesperado." },
+          { id: "BUG-AUTO-MT-FIN-03", title: "[AUTO] Campo Data retorna vazio ao editar pagamento", severity: "Crítico", status: "open", mtId: "MT-FIN-03", images: [], comments: [], date: "22/04/2026", description: "Abrir edição de pagamento existente → campo data aparece vazio mesmo com data salva." },
+          { id: "BUG-AUTO-MT-FIN-05", title: "[AUTO] Filtro por nome não restaura listagem ao limpar", severity: "Alto", status: "open", mtId: "MT-FIN-05", images: [], comments: [], date: "22/04/2026", description: "Aplicar filtro por nome e limpar → listagem não volta ao estado original." },
+        ],
+      },
+      {
+        id: "f-convenio", label: "Convênio",
+        e2e: [],
+        manual: [
+          { id: "MT-CON-01", contexto: "Tela Principal", title: "Validar os filtros da tela \"nome e código\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-CON-02", contexto: "Tela Principal", title: "Validar os filtros por \"todos, ativos e inativos\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-CON-03", contexto: "Novo convênio", title: "Inclusão de um novo convênio com sucesso preenchendo todos os campos", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-CON-04", contexto: "Novo convênio", title: "Validar campos obrigatórios", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-CON-05", contexto: "Novo convênio", title: "Validar máscaras dos campos \"valor, telefone e email\"", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-CON-06", contexto: "Novo convênio", title: "Incluir um novo convênio com o status inativo e salvar com sucesso", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-CON-07", contexto: "Novo convênio", title: "Editar os dados de um convênio com sucesso", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-CON-08", contexto: "Novo convênio", title: "Excluir um convênio", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-CON-09", contexto: "Regras", title: "Regra de negócio a confirmar — campo e-mail não é obrigatório?", tipo: "Regra de negócio", status: "aguarda", bugId: null, images: [], note: "", comments: [] },
+        ],
+        bugs: [],
+      },
+      {
+        id: "f-relatorio-financeiro", label: "Relatório Financeiro",
+        e2e: [],
+        manual: [
+          { id: "MT-RF-01", contexto: "Relatório Financeiro", title: "Validar dados do dashboard se bate com o valor da tela de financeiro", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RF-02", contexto: "Relatório Financeiro", title: "Validar filtros de período", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RF-03", contexto: "Relatório Financeiro", title: "Verificar por Profissional", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RF-04", contexto: "Relatório Financeiro", title: "Validar filtros dos atalhos", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+        ],
+        bugs: [],
+      },
+      {
+        id: "f-relatorio-geral", label: "Geral — Relatórios",
+        e2e: [],
+        manual: [
+          { id: "MT-RG-01", contexto: "Geral", title: "Validar filtros por \"nome, status e entidades\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RG-02", contexto: "Novo relatório", title: "Criar novo relatório por \"agendamento\" — \"analítico e sintético\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RG-03", contexto: "Novo relatório", title: "Criar novo relatório por \"pacientes\" — \"analítico e sintético\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RG-04", contexto: "Novo relatório", title: "Criar novo relatório por \"pagamentos\" — \"analítico e sintético\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RG-05", contexto: "Novo relatório", title: "Criar novo relatório por \"prontuários\" — \"analítico e sintético\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RG-06", contexto: "Novo relatório", title: "Criar novo relatório por \"agendamento\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RG-07", contexto: "Novo relatório", title: "Validar botão de ação \"Baixar\"", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-RG-08", contexto: "Regras", title: "Validar botão de ação \"encaminhar por e-mail\" — verificar se vai rodar local ou será necessário em produção", tipo: "Regra de negócio", status: "aguarda", bugId: null, images: [], note: "", comments: [] },
+        ],
+        bugs: [],
+      },
+      {
+        id: "f-whatsapp", label: "WhatsApp",
+        e2e: [],
+        manual: [],
+        bugs: [],
+      },
+      {
+        id: "f-solicitacoes", label: "Solicitações",
+        e2e: [],
+        manual: [],
+        bugs: [],
+      },
+      {
+        id: "f-meus-tickets", label: "Meus Tickets",
+        e2e: [],
+        manual: [
+          { id: "MT-TKT-01", contexto: "Meus Tickets", title: "Criar um novo ticket com sucesso", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-TKT-02", contexto: "Meus Tickets", title: "Validar todos os campos obrigatórios", tipo: "Validação de campo", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-TKT-03", contexto: "Meus Tickets", title: "Validar que ao abrir um novo ticket o perfil super adm vai receber a solicitação do ticket", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+          { id: "MT-TKT-04", contexto: "Meus Tickets", title: "Validar a inclusão do anexo", tipo: "Funcional", status: "pendente", bugId: null, images: [], note: "" },
+        ],
+        bugs: [],
+      },
+    ],
+  },
+  { id: "administrador", label: "Administrador", color: "#a855f7", funcionalidades: [] },
+  { id: "medico",        label: "Médico",         color: "#22c55e", funcionalidades: [] },
+  { id: "gestor",        label: "Gestor",          color: "#f59e0b", funcionalidades: [] },
+];
 
-async function loadData() {
-  try {
-    const r = await window.storage.get(STORAGE_KEY);
-    return r ? JSON.parse(r.value) : null;
-  } catch { return null; }
-}
-
+// ─── STORAGE ──────────────────────────────────────────────────────────────────
 async function saveData(data) {
-  try {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(data));
-  } catch (e) { console.error("Storage error", e); }
+  try { await dbSet(dbRef(db, STORAGE_KEY), data); }
+  catch (e) { console.error("Firebase save error", e); }
 }
 
-// ── BADGE ──────────────────────────────────────────────────────────────────
+// ─── PURE HELPERS ─────────────────────────────────────────────────────────────
+function updateFunc(roles, roleId, funcId, updater) {
+  return roles.map(r => r.id !== roleId ? r : {
+    ...r,
+    funcionalidades: r.funcionalidades.map(f => f.id !== funcId ? f : updater(f)),
+  });
+}
+
+function genManualId(funcLabel, existingCount, index = 0) {
+  const prefix = funcLabel.split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 3);
+  return `MT-${prefix}-${String(existingCount + index + 1).padStart(2, "0")}`;
+}
+
+function genFuncId(label) {
+  return `f-${label.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")}`;
+}
+
+function parseImport(text) {
+  return text.split("\n")
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !l.startsWith("-"))
+    .map(l => {
+      const parts = l.split("|").map(p => p.trim());
+      if (parts.length >= 3) return { contexto: `${parts[0]} > ${parts[1]}`, title: parts.slice(2).join(" | ").trim() };
+      if (parts.length === 2) return { contexto: parts[0], title: parts[1] };
+      return { contexto: "", title: l };
+    })
+    .filter(l => l.title.length > 0);
+}
+
+function detectTipo(title) {
+  const t = title.toLowerCase();
+  if (t.endsWith("?") || t.includes("pode ser") || t.includes("validar regra") || t.includes("regra de negócio")) return "Regra de negócio";
+  if (t.match(/inválid|obrigatório|impedem|não é aceito|não é permitid|duplicad|duplicidad|exibe mensagem|exibe erro|parâmetros corretos/)) return "Validação de campo";
+  if (t.match(/some ao|label.*some|botão.*some|zoom/)) return "Interface";
+  return "Funcional";
+}
+
+// ─── SHARED COMPONENTS ────────────────────────────────────────────────────────
+const inp = (extra = {}) => ({
+  background: C.card, border: `1px solid ${C.border}`, color: C.text,
+  borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none",
+  fontFamily: "inherit", width: "100%", boxSizing: "border-box", ...extra,
+});
+
 function Badge({ text, color, bg }) {
   return (
     <span style={{
       background: bg, color, border: `1px solid ${color}33`,
       borderRadius: 4, padding: "2px 8px", fontSize: 11,
-      fontWeight: 700, letterSpacing: "0.04em", whiteSpace: "nowrap",
-      fontFamily: "monospace"
+      fontWeight: 700, letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "monospace",
     }}>{text}</span>
   );
 }
 
-// ── STATUS BUTTON ──────────────────────────────────────────────────────────
-function StatusBtn({ status, onClick }) {
-  const cfg = STATUS_CFG[status];
+function ManualStatusBtn({ status, onClick }) {
+  const cfg = MANUAL_STATUS_CFG[status];
   return (
     <button onClick={onClick} title="Clique para avançar status" style={{
       display: "flex", alignItems: "center", gap: 5,
-      background: cfg.bg, color: cfg.color,
-      border: `1px solid ${cfg.color}44`,
+      background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}44`,
       borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700,
-      cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s",
-      fontFamily: "monospace"
+      cursor: "pointer", whiteSpace: "nowrap", fontFamily: "monospace",
     }}>
-      <cfg.Icon size={13} />
-      {cfg.label}
+      <cfg.Icon size={13} />{cfg.label}
     </button>
   );
 }
 
-// ── STAT CARD ──────────────────────────────────────────────────────────────
-function StatCard({ label, value, color, Icon, sub }) {
+function Modal({ title, onClose, children, width = 600 }) {
   return (
-    <div style={{
-      background: C.card, border: `1px solid ${C.border}`,
-      borderRadius: 12, padding: "20px 24px",
-      borderLeft: `3px solid ${color}`,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <span style={{ color: C.textMuted, fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</span>
-        <Icon size={18} color={color} />
-      </div>
-      <div style={{ color, fontSize: 36, fontWeight: 800, lineHeight: 1, fontFamily: "monospace" }}>{value}</div>
-      {sub && <div style={{ color: C.textMuted, fontSize: 12, marginTop: 6 }}>{sub}</div>}
-    </div>
-  );
-}
-
-// ── DASHBOARD VIEW ─────────────────────────────────────────────────────────
-function DashboardView({ cases, bugs }) {
-  const total = cases.length;
-  const passed = cases.filter(c => c.status === "passed").length;
-  const failed = cases.filter(c => c.status === "failed").length;
-  const blocked = cases.filter(c => c.status === "blocked").length;
-  const pending = cases.filter(c => c.status === "pending").length;
-  const executed = passed + failed + blocked;
-  const coverage = total > 0 ? Math.round((executed / total) * 100) : 0;
-  const openBugs = bugs.filter(b => b.status === "open").length;
-
-  const chartData = MODULES_ORDER.map(mod => {
-    const mc = cases.filter(c => c.module === mod);
-    return {
-      name: MODULE_ABBREV[mod] || mod,
-      Passou: mc.filter(c => c.status === "passed").length,
-      Falhou: mc.filter(c => c.status === "failed").length,
-      Bloqueado: mc.filter(c => c.status === "blocked").length,
-      Pendente: mc.filter(c => c.status === "pending").length,
-      total: mc.length,
-    };
-  });
-
-  const criticalFailed = cases.filter(c => c.status === "failed" && c.prioridade === "Crítico");
-  const pendingCritical = cases.filter(c => c.status === "pending" && c.prioridade === "Crítico");
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* KPI row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
-        <StatCard label="Cobertura" value={`${coverage}%`} color={coverage > 70 ? C.passed : coverage > 40 ? C.blocked : C.failed} Icon={Layers} sub={`${executed}/${total} executados`} />
-        <StatCard label="Passaram" value={passed} color={C.passed} Icon={CheckCircle} sub={total > 0 ? `${Math.round(passed / total * 100)}% do total` : ""} />
-        <StatCard label="Falharam" value={failed} color={C.failed} Icon={XCircle} sub={total > 0 ? `${Math.round(failed / total * 100)}% do total` : ""} />
-        <StatCard label="Bloqueados" value={blocked} color={C.blocked} Icon={AlertCircle} sub={total > 0 ? `${Math.round(blocked / total * 100)}% do total` : ""} />
-        <StatCard label="Pendentes" value={pending} color={C.pending} Icon={Clock} sub="não executados" />
-        <StatCard label="Bugs Abertos" value={openBugs} color={openBugs > 0 ? C.failed : C.passed} Icon={Bug} sub={`${bugs.length} total`} />
-      </div>
-
-      {/* Chart */}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
-        <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 20, letterSpacing: "0.04em" }}>
-          COBERTURA POR MÓDULO
-        </h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-            <XAxis dataKey="name" tick={{ fill: C.textMuted, fontSize: 10 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: C.textMuted, fontSize: 11 }} axisLine={false} tickLine={false} />
-            <Tooltip
-              contentStyle={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12 }}
-              labelStyle={{ color: C.text, fontWeight: 700 }}
-            />
-            <Bar dataKey="Passou" stackId="a" fill={C.passed} />
-            <Bar dataKey="Falhou" stackId="a" fill={C.failed} />
-            <Bar dataKey="Bloqueado" stackId="a" fill={C.blocked} />
-            <Bar dataKey="Pendente" stackId="a" fill={C.border} radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-        <div style={{ display: "flex", gap: 20, marginTop: 12, flexWrap: "wrap" }}>
-          {[["Passou", C.passed], ["Falhou", C.failed], ["Bloqueado", C.blocked], ["Pendente", C.border]].map(([k, col]) => (
-            <span key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.textDim }}>
-              <span style={{ width: 12, height: 12, borderRadius: 2, background: col, display: "inline-block" }} />
-              {k}
-            </span>
-          ))}
+    <div style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: C.card, border: `1px solid ${C.borderLight}`, borderRadius: 12, padding: 24, width, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: 0 }}>{title}</h3>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer" }}><X size={18} /></button>
         </div>
-      </div>
-
-      {/* Bottom row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
-          <h3 style={{ color: C.failed, fontSize: 13, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-            <XCircle size={14} /> CRÍTICOS COM FALHA ({criticalFailed.length})
-          </h3>
-          {criticalFailed.length === 0
-            ? <p style={{ color: C.textMuted, fontSize: 13 }}>Nenhum crítico falhou ainda 🎉</p>
-            : criticalFailed.slice(0, 5).map(c => (
-              <div key={c.id} style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 10, marginBottom: 10 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ color: C.textMuted, fontSize: 11, fontFamily: "monospace" }}>{c.id}</span>
-                  <span style={{ color: C.text, fontSize: 12 }}>{c.title}</span>
-                </div>
-              </div>
-            ))
-          }
-        </div>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
-          <h3 style={{ color: C.blocked, fontSize: 13, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-            <Clock size={14} /> CRÍTICOS PENDENTES ({pendingCritical.length})
-          </h3>
-          {pendingCritical.length === 0
-            ? <p style={{ color: C.textMuted, fontSize: 13 }}>Todos os críticos foram executados ✓</p>
-            : pendingCritical.slice(0, 5).map(c => (
-              <div key={c.id} style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 10, marginBottom: 10 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ color: C.textMuted, fontSize: 11, fontFamily: "monospace" }}>{c.id}</span>
-                  <span style={{ color: C.text, fontSize: 12 }}>{c.title}</span>
-                  <Badge text={c.module.replace("Roles — ", "")} color={C.textMuted} bg={C.border} />
-                </div>
-              </div>
-            ))
-          }
-        </div>
+        {children}
       </div>
     </div>
   );
 }
 
-// ── TEST CASES VIEW ────────────────────────────────────────────────────────
-function TestCasesView({ cases, onStatusChange, onAddNote, onAddCase, onEditCase }) {
-  const [search, setSearch] = useState("");
-  const [filterMod, setFilterMod] = useState("Todos");
-  const [filterStatus, setFilterStatus] = useState("Todos");
-  const [filterPrio, setFilterPrio] = useState("Todos");
-  const [filterCamada, setFilterCamada] = useState("Todos");
-  const [expandedId, setExpandedId] = useState(null);
-  const [notes, setNotes] = useState({});
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ id: "", module: MODULES_ORDER[0], title: "", tipo: "Funcional", prioridade: "Crítico", camada: "E2E" });
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({});
-
-  const filtered = cases.filter(c => {
-    const matchSearch = !search || c.title.toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase());
-    const matchMod = filterMod === "Todos" || c.module === filterMod;
-    const matchStatus = filterStatus === "Todos" || c.status === filterStatus;
-    const matchPrio = filterPrio === "Todos" || c.prioridade === filterPrio;
-    const matchCamada = filterCamada === "Todos" || (c.camadas || []).includes(filterCamada);
-    return matchSearch && matchMod && matchStatus && matchPrio && matchCamada;
-  });
-
-  const inputStyle = {
-    background: C.card, border: `1px solid ${C.border}`, color: C.text,
-    borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none",
-    fontFamily: "inherit"
-  };
-  const selectStyle = { ...inputStyle, cursor: "pointer" };
-  const inp = f => ({ ...f, background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" });
-
-  const handleSubmit = () => {
-    if (!form.id.trim() || !form.title.trim()) return;
-    onAddCase({ ...form, id: form.id.trim(), status: "pending" });
-    setForm({ id: "", module: MODULES_ORDER[0], title: "", tipo: "Funcional", prioridade: "Crítico", camada: "E2E" });
-    setShowForm(false);
-  };
-
-  const startEdit = (c, e) => {
-    e.stopPropagation();
-    setEditingId(c.id);
-    setEditForm({ title: c.title, module: c.module, tipo: c.tipo, prioridade: c.prioridade, camada: c.camada });
-    setExpandedId(c.id);
-  };
-
-  const saveEdit = (id) => {
-    if (!editForm.title.trim()) return;
-    onEditCase(id, editForm);
-    setEditingId(null);
-  };
-
-  return (
-    <div>
-      {/* Header row with button */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <button onClick={() => setShowForm(!showForm)} style={{
-          display: "flex", alignItems: "center", gap: 6,
-          background: C.blue, color: "#fff", border: "none",
-          borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700,
-          cursor: "pointer"
-        }}>
-          <Plus size={14} /> Novo Caso
-        </button>
-      </div>
-
-      {/* New case form */}
-      {showForm && (
-        <div style={{ background: C.card, border: `1px solid ${C.borderLight}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Novo Caso de Teste</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>ID *</label>
-              <input value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value }))} placeholder="Ex: PAC-01" style={inp({})} />
-            </div>
-            <div>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>MÓDULO</label>
-              <select value={form.module} onChange={e => setForm(f => ({ ...f, module: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                {MODULES_ORDER.map(m => <option key={m}>{m}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>CAMADA</label>
-              <select value={form.camada} onChange={e => setForm(f => ({ ...f, camada: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                {["Backend", "Frontend", "E2E"].map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TÍTULO *</label>
-              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Descreva o cenário de teste..." style={inp({})} />
-            </div>
-            <div>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TIPO</label>
-              <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                {["Funcional", "Segurança", "IA", "Interface", "Carga"].map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>PRIORIDADE</label>
-              <select value={form.prioridade} onChange={e => setForm(f => ({ ...f, prioridade: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                {["Crítico", "Alto", "Médio", "Baixo"].map(p => <option key={p}>{p}</option>)}
-              </select>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <button onClick={() => setShowForm(false)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
-            <button onClick={handleSubmit} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Salvar Caso</button>
-          </div>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
-          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.textMuted }} />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por ID ou título..."
-            style={{ ...inputStyle, paddingLeft: 32, width: "100%", boxSizing: "border-box" }}
-          />
-        </div>
-        <select value={filterMod} onChange={e => setFilterMod(e.target.value)} style={selectStyle}>
-          <option>Todos</option>
-          {MODULES_ORDER.map(m => <option key={m}>{m}</option>)}
-        </select>
-        <select value={filterCamada} onChange={e => setFilterCamada(e.target.value)} style={selectStyle}>
-          <option>Todos</option>
-          {["Backend", "Frontend", "E2E"].map(c => <option key={c}>{c}</option>)}
-        </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selectStyle}>
-          <option>Todos</option>
-          {["pending", "passed", "failed", "blocked"].map(s => <option key={s} value={s}>{STATUS_CFG[s].label}</option>)}
-        </select>
-        <select value={filterPrio} onChange={e => setFilterPrio(e.target.value)} style={selectStyle}>
-          <option>Todos</option>
-          {["Crítico", "Alto", "Médio", "Baixo"].map(p => <option key={p}>{p}</option>)}
-        </select>
-        <span style={{ color: C.textMuted, fontSize: 12, whiteSpace: "nowrap" }}>{filtered.length} casos</span>
-      </div>
-
-      {/* Table */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {filtered.map(c => {
-          const isExpanded = expandedId === c.id;
-          return (
-            <div key={c.id} style={{
-              background: isExpanded ? C.cardHover : C.card,
-              border: `1px solid ${isExpanded ? C.borderLight : C.border}`,
-              borderRadius: 8, overflow: "hidden", transition: "all 0.15s"
-            }}>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer", flexWrap: "wrap" }}
-                onClick={() => setExpandedId(isExpanded ? null : c.id)}
-              >
-                <span style={{ color: C.blue, fontSize: 12, fontWeight: 700, fontFamily: "monospace", minWidth: 130 }}>{c.id}</span>
-                <span style={{ color: C.text, fontSize: 13, flex: 1, minWidth: 150 }}>{c.title}</span>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <Badge text={c.prioridade} color={PRIO_CFG[c.prioridade]?.color || C.textMuted} bg={PRIO_CFG[c.prioridade]?.bg || C.border} />
-                  <Badge text={c.tipo} color={TIPO_CFG[c.tipo]?.color || C.textMuted} bg={TIPO_CFG[c.tipo]?.bg || C.border} />
-                  {(c.camadas || []).map(cam => <Badge key={cam} text={cam} color={CAMADA_CFG[cam]?.color || C.textMuted} bg={CAMADA_CFG[cam]?.bg || C.border} />)}
-                  <StatusBtn status={c.status} onClick={e => { e.stopPropagation(); onStatusChange(c.id); }} />
-                  <button onClick={e => startEdit(c, e)} style={{ background: "transparent", color: C.textMuted, border: "none", cursor: "pointer", padding: 4, borderRadius: 4, lineHeight: 0 }} title="Editar caso">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  </button>
-                  {isExpanded ? <ChevronUp size={14} color={C.textMuted} /> : <ChevronDown size={14} color={C.textMuted} />}
-                </div>
-              </div>
-              {isExpanded && (
-                <div style={{ padding: "0 16px 16px 16px", borderTop: `1px solid ${C.border}` }}>
-                  {editingId === c.id ? (
-                    <div style={{ marginTop: 14 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
-                        <div style={{ gridColumn: "1/-1" }}>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TÍTULO</label>
-                          <input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} style={inp({})} />
-                        </div>
-                        <div>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>MÓDULO</label>
-                          <select value={editForm.module} onChange={e => setEditForm(f => ({ ...f, module: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                            {MODULES_ORDER.map(m => <option key={m}>{m}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TIPO</label>
-                          <select value={editForm.tipo} onChange={e => setEditForm(f => ({ ...f, tipo: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                            {["Funcional", "Segurança", "IA", "Interface", "Carga"].map(t => <option key={t}>{t}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>PRIORIDADE</label>
-                          <select value={editForm.prioridade} onChange={e => setEditForm(f => ({ ...f, prioridade: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                            {["Crítico", "Alto", "Médio", "Baixo"].map(p => <option key={p}>{p}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>CAMADA</label>
-                          <select value={editForm.camada} onChange={e => setEditForm(f => ({ ...f, camada: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                            {["Backend", "Frontend", "E2E"].map(cam => <option key={cam}>{cam}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button onClick={() => setEditingId(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 8, padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>Cancelar</button>
-                        <button onClick={() => saveEdit(c.id)} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Salvar</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
-                        <div style={{ flex: 1, minWidth: 200 }}>
-                          <p style={{ color: C.textMuted, fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Módulo</p>
-                          <p style={{ color: C.textDim, fontSize: 13 }}>{c.module}</p>
-                        </div>
-                        <div style={{ flex: 1, minWidth: 100 }}>
-                          <p style={{ color: C.textMuted, fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Camadas</p>
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                            {(c.camadas || []).map(cam => <Badge key={cam} text={cam} color={CAMADA_CFG[cam]?.color || C.textMuted} bg={CAMADA_CFG[cam]?.bg || C.border} />)}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Resultado do teste automatizado */}
-                      {(c.testDate || c.testError) && (
-                        <div style={{
-                          marginTop: 12, borderRadius: 8, padding: "12px 14px",
-                          background: c.status === "passed" ? C.passedBg : C.failedBg,
-                          border: `1px solid ${c.status === "passed" ? C.passed + "44" : C.failed + "44"}`,
-                        }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                              Último resultado automatizado
-                            </span>
-                            <span style={{ fontSize: 11, color: C.textMuted, fontFamily: "monospace" }}>
-                              {c.testDate} {c.testTime}
-                            </span>
-                          </div>
-                          {c.testError && (
-                            <pre style={{
-                              marginTop: 8, fontSize: 11, color: C.failed,
-                              fontFamily: "monospace", whiteSpace: "pre-wrap",
-                              wordBreak: "break-all", background: "transparent", border: "none", padding: 0
-                            }}>{c.testError}</pre>
-                          )}
-                          {c.reportUrl && (
-                            <div style={{ marginTop: 8 }}>
-                              <span style={{ fontSize: 11, color: C.textMuted }}>
-                                Para ver o relatório completo: {" "}
-                                <a href={c.reportUrl} target="_blank" rel="noreferrer" style={{ color: C.blue, fontSize: 11, fontWeight: 700 }}>Ver relatório completo →</a>
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div style={{ marginTop: 12 }}>
-                        <p style={{ color: C.textMuted, fontSize: 11, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>Notas de Execução</p>
-                        <textarea
-                          value={notes[c.id] || c.note || ""}
-                          onChange={e => setNotes(n => ({ ...n, [c.id]: e.target.value }))}
-                          onBlur={e => onAddNote(c.id, e.target.value)}
-                          placeholder="Descreva o resultado, ambiente, evidências..."
-                          style={{
-                            width: "100%", boxSizing: "border-box",
-                            background: "#070d1a", border: `1px solid ${C.border}`,
-                            color: C.textDim, borderRadius: 6, padding: 10,
-                            fontSize: 12, fontFamily: "monospace", resize: "vertical",
-                            minHeight: 70, outline: "none"
-                          }}
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}>Nenhum caso encontrado com esses filtros.</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── BUGS VIEW ──────────────────────────────────────────────────────────────
-function BugsView({ bugs, onAdd, onToggle, onDelete, onEdit }) {
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", module: "Autenticação e Cadastro", severity: "Alto", description: "", status: "open" });
-  const [images, setImages] = useState([]);
-  const [expandedBug, setExpandedBug] = useState(null);
-  const [pasteHint, setPasteHint] = useState(false);
-  const [editingBugId, setEditingBugId] = useState(null);
-  const [editBugForm, setEditBugForm] = useState({});
-  const [filterBugMod, setFilterBugMod] = useState("Todos");
-  const [filterBugStatus, setFilterBugStatus] = useState("Todos");
-  const inp = f => ({ ...f, background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" });
-
-  const addImageFromFile = (file, name) => {
+function ImageArea({ images, onChange }) {
+  const addFile = (file) => {
     const reader = new FileReader();
-    reader.onload = ev => setImages(prev => [...prev, { name, data: ev.target.result }]);
+    reader.onload = ev => onChange([...images, { name: file.name, data: ev.target.result }]);
     reader.readAsDataURL(file);
   };
-
-  const handleImageUpload = (e) => {
-    Array.from(e.target.files).forEach(f => addImageFromFile(f, f.name));
-    e.target.value = "";
-  };
-
   const handlePaste = (e) => {
-    const items = Array.from(e.clipboardData?.items || []);
-    const imageItems = items.filter(item => item.type.startsWith("image/"));
-    if (imageItems.length === 0) return;
-    e.preventDefault();
-    imageItems.forEach((item, i) => {
-      const file = item.getAsFile();
-      if (file) addImageFromFile(file, `print-${Date.now()}-${i}.png`);
-    });
-    setPasteHint(true);
-    setTimeout(() => setPasteHint(false), 2000);
+    const items = Array.from(e.clipboardData?.items || []).filter(i => i.type.startsWith("image/"));
+    items.forEach((item, i) => { const f = item.getAsFile(); if (f) addFile(f); });
+    if (items.length) e.preventDefault();
   };
-
-  const handleSubmit = () => {
-    if (!form.title.trim()) return;
-    onAdd({ ...form, id: `BUG-${String(Date.now()).slice(-4)}`, date: new Date().toLocaleDateString("pt-BR"), images });
-    setForm({ title: "", module: "Autenticação e Cadastro", severity: "Alto", description: "", status: "open" });
-    setImages([]);
-    setShowForm(false);
-  };
-
-  const startEditBug = (b) => {
-    setEditingBugId(b.id);
-    setEditBugForm({ title: b.title, module: b.module, severity: b.severity, description: b.description || "" });
-    setExpandedBug(b.id);
-  };
-
-  const saveEditBug = (id) => {
-    if (!editBugForm.title.trim()) return;
-    onEdit(id, editBugForm);
-    setEditingBugId(null);
-  };
-
-  const bugModules = ["Todos", ...Array.from(new Set(bugs.map(b => b.module))).sort()];
-  const filteredBugs = bugs.filter(b => {
-    const matchMod = filterBugMod === "Todos" || b.module === filterBugMod;
-    const matchStatus = filterBugStatus === "Todos" || b.status === filterBugStatus;
-    return matchMod && matchStatus;
-  });
-  const open = bugs.filter(b => b.status === "open");
-  const resolved = bugs.filter(b => b.status === "resolved");
-
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={{ display: "flex", gap: 16 }}>
-          <span style={{ color: C.failed, fontWeight: 700, fontSize: 13 }}>{open.length} abertos</span>
-          <span style={{ color: C.passed, fontWeight: 700, fontSize: 13 }}>{resolved.length} resolvidos</span>
-        </div>
-        <button onClick={() => setShowForm(!showForm)} style={{
-          display: "flex", alignItems: "center", gap: 6,
-          background: C.blue, color: "#fff", border: "none",
-          borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700,
-          cursor: "pointer"
-        }}>
-          <Plus size={14} /> Registrar Bug
-        </button>
+      <div
+        onPaste={handlePaste} tabIndex={0}
+        style={{ border: `1px dashed ${C.border}`, borderRadius: 8, padding: "12px 16px", cursor: "text", outline: "none", color: C.textMuted, fontSize: 12, marginBottom: 8 }}
+      >
+        Cole screenshots aqui (Ctrl+V) ou use o botão abaixo
       </div>
-
-      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={filterBugMod} onChange={e => setFilterBugMod(e.target.value)} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none", cursor: "pointer", fontFamily: "inherit" }}>
-          {bugModules.map(m => <option key={m}>{m}</option>)}
-        </select>
-        <select value={filterBugStatus} onChange={e => setFilterBugStatus(e.target.value)} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none", cursor: "pointer", fontFamily: "inherit" }}>
-          <option value="Todos">Todos</option>
-          <option value="open">Abertos</option>
-          <option value="resolved">Resolvidos</option>
-        </select>
-        <span style={{ color: C.textMuted, fontSize: 12 }}>{filteredBugs.length} bug{filteredBugs.length !== 1 ? "s" : ""}</span>
-      </div>
-
-      {showForm && (
-        <div style={{ background: C.card, border: `1px solid ${C.borderLight}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Novo Bug</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TÍTULO *</label>
-              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Descreva o bug..." style={inp({})} />
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.blueBg, color: C.blue, border: `1px solid ${C.blue}33`, borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+        <Upload size={12} /> Adicionar imagem
+        <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => Array.from(e.target.files).forEach(addFile)} />
+      </label>
+      {images.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          {images.map((img, i) => (
+            <div key={i} style={{ position: "relative" }}>
+              <img src={img.data} alt={img.name} style={{ height: 60, width: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
+              <button onClick={() => onChange(images.filter((_, j) => j !== i))} style={{ position: "absolute", top: -4, right: -4, background: C.failed, border: "none", borderRadius: "50%", width: 16, height: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={10} color="#fff" />
+              </button>
             </div>
-            <div>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>MÓDULO</label>
-              <select value={form.module} onChange={e => setForm(f => ({ ...f, module: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                {MODULES_ORDER.map(m => <option key={m}>{m}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>SEVERIDADE</label>
-              <select value={form.severity} onChange={e => setForm(f => ({ ...f, severity: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                {["Crítico", "Alto", "Médio", "Baixo"].map(s => <option key={s}>{s}</option>)}
-              </select>
-            </div>
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>DESCRIÇÃO / PASSOS PARA REPRODUZIR</label>
-              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="1. Acessar...\n2. Clicar em...\n3. Observar..." style={{ ...inp({}), minHeight: 80, resize: "vertical", fontFamily: "monospace" }} />
-            </div>
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 8 }}>SCREENSHOTS / EVIDÊNCIAS</label>
-              <div
-                onPaste={handlePaste}
-                tabIndex={0}
-                style={{
-                  background: C.bg, border: `1px dashed ${pasteHint ? C.passed : C.borderLight}`,
-                  borderRadius: 8, padding: "14px 16px", outline: "none",
-                  transition: "border-color 0.2s"
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: C.textMuted, fontSize: 13 }}>
-                    <Plus size={14} /> Selecionar arquivo
-                    <input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display: "none" }} />
-                  </label>
-                  <span style={{ color: C.textMuted, fontSize: 12 }}>ou</span>
-                  <span style={{
-                    color: pasteHint ? C.passed : C.textMuted, fontSize: 12,
-                    fontFamily: "monospace", transition: "color 0.2s"
-                  }}>
-                    {pasteHint ? "✓ Print colado!" : "Ctrl+V para colar print"}
-                  </span>
-                </div>
-                {images.length > 0 && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                    {images.map((img, i) => (
-                      <div key={i} style={{ position: "relative" }}>
-                        <img src={img.data} alt={img.name} style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
-                        <button onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))} style={{
-                          position: "absolute", top: -6, right: -6, background: C.failed, border: "none",
-                          borderRadius: "50%", width: 18, height: 18, cursor: "pointer", display: "flex",
-                          alignItems: "center", justifyContent: "center", padding: 0
-                        }}>
-                          <X size={10} color="#fff" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <button onClick={() => setShowForm(false)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
-            <button onClick={handleSubmit} style={{ background: C.failed, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Salvar Bug</button>
-          </div>
+          ))}
         </div>
       )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {filteredBugs.length === 0 && <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}>Nenhum bug encontrado com esses filtros.</div>}
-        {filteredBugs.map(b => {
-          const isExpanded = expandedBug === b.id;
-          const hasImages = b.images && b.images.length > 0;
-          return (
-            <div key={b.id} style={{
-              background: C.card,
-              border: `1px solid ${C.border}`,
-              borderLeft: `3px solid ${b.status === "resolved" ? C.passed : (SEV_CFG[b.severity]?.color || C.failed)}`,
-              borderRadius: 8, overflow: "hidden",
-              opacity: b.status === "resolved" ? 0.6 : 1
-            }}>
-              <div style={{ padding: "14px 16px" }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
-                      <span style={{ color: C.failed, fontSize: 11, fontFamily: "monospace", fontWeight: 700 }}>{b.id}</span>
-                      <Badge text={b.severity} color={SEV_CFG[b.severity]?.color || C.failed} bg={SEV_CFG[b.severity]?.bg || C.failedBg} />
-                      <Badge text={b.module} color={C.textMuted} bg={C.border} />
-                      <span style={{ color: C.textMuted, fontSize: 11 }}>{b.date}</span>
-                      {b.status === "resolved" && <Badge text="Resolvido" color={C.passed} bg={C.passedBg} />}
-                      {hasImages && (
-                        <button onClick={() => setExpandedBug(isExpanded ? null : b.id)} style={{
-                          background: C.blueBg, color: C.blue, border: `1px solid ${C.blue}33`,
-                          borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700,
-                          cursor: "pointer", fontFamily: "monospace"
-                        }}>
-                          {b.images.length} foto{b.images.length > 1 ? "s" : ""} {isExpanded ? "▲" : "▼"}
-                        </button>
-                      )}
-                    </div>
-                    <p style={{ color: C.text, fontSize: 13, fontWeight: 600, margin: 0 }}>{b.title}</p>
-                    {b.description && <p style={{ color: C.textMuted, fontSize: 12, marginTop: 4, fontFamily: "monospace", whiteSpace: "pre-line" }}>{b.description}</p>}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => onToggle(b.id)} title={b.status === "open" ? "Marcar resolvido" : "Reabrir"} style={{
-                      background: b.status === "open" ? C.passedBg : C.border,
-                      color: b.status === "open" ? C.passed : C.textMuted,
-                      border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700
-                    }}>
-                      {b.status === "open" ? "✓ Resolver" : "↺ Reabrir"}
-                    </button>
-                    <button onClick={() => startEditBug(b)} style={{ background: "transparent", color: C.textMuted, border: "none", cursor: "pointer", padding: 6, borderRadius: 6 }} title="Editar bug">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    </button>
-                    <button onClick={() => onDelete(b.id)} style={{ background: "transparent", color: C.textMuted, border: "none", cursor: "pointer", padding: 6, borderRadius: 6 }}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {isExpanded && (
-                <div style={{ padding: "0 16px 16px 16px", borderTop: `1px solid ${C.border}` }}>
-                  {editingBugId === b.id ? (
-                    <div style={{ marginTop: 14 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-                        <div style={{ gridColumn: "1/-1" }}>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TÍTULO</label>
-                          <input value={editBugForm.title} onChange={e => setEditBugForm(f => ({ ...f, title: e.target.value }))} style={inp({})} />
-                        </div>
-                        <div>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>MÓDULO</label>
-                          <select value={editBugForm.module} onChange={e => setEditBugForm(f => ({ ...f, module: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                            {MODULES_ORDER.map(m => <option key={m}>{m}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>SEVERIDADE</label>
-                          <select value={editBugForm.severity} onChange={e => setEditBugForm(f => ({ ...f, severity: e.target.value }))} style={inp({ cursor: "pointer" })}>
-                            {["Crítico", "Alto", "Médio", "Baixo"].map(s => <option key={s}>{s}</option>)}
-                          </select>
-                        </div>
-                        <div style={{ gridColumn: "1/-1" }}>
-                          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>DESCRIÇÃO</label>
-                          <textarea value={editBugForm.description} onChange={e => setEditBugForm(f => ({ ...f, description: e.target.value }))} style={{ ...inp({}), minHeight: 70, resize: "vertical", fontFamily: "monospace" }} />
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button onClick={() => setEditingBugId(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 8, padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>Cancelar</button>
-                        <button onClick={() => saveEditBug(b.id)} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Salvar</button>
-                      </div>
-                    </div>
-                  ) : hasImages && (
-                    <>
-                      <p style={{ color: C.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", margin: "12px 0 8px" }}>Screenshots</p>
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        {b.images.map((img, i) => (
-                          <a key={i} href={img.data} target="_blank" rel="noreferrer" title={img.name}>
-                            <img src={img.data} alt={img.name} style={{
-                              height: 120, maxWidth: 200, objectFit: "cover",
-                              borderRadius: 8, border: `1px solid ${C.border}`,
-                              cursor: "zoom-in"
-                            }} />
-                          </a>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
 
-// ── REPORT VIEW ────────────────────────────────────────────────────────────
-function ReportView({ cases, bugs }) {
-  const total = cases.length;
-  const passed = cases.filter(c => c.status === "passed").length;
-  const failed = cases.filter(c => c.status === "failed").length;
-  const blocked = cases.filter(c => c.status === "blocked").length;
-  const pending = cases.filter(c => c.status === "pending").length;
-  const executed = passed + failed + blocked;
-  const coverage = total > 0 ? Math.round(executed / total * 100) : 0;
-  const openBugs = bugs.filter(b => b.status === "open").length;
-  const today = new Date().toLocaleDateString("pt-BR");
-
-  const modStats = MODULES_ORDER.map(mod => {
-    const mc = cases.filter(c => c.module === mod);
-    return {
-      mod, total: mc.length,
-      passed: mc.filter(c => c.status === "passed").length,
-      failed: mc.filter(c => c.status === "failed").length,
-      blocked: mc.filter(c => c.status === "blocked").length,
-      pending: mc.filter(c => c.status === "pending").length,
-    };
-  });
-
-  const go = coverage >= 80 && failed === 0 && blocked === 0;
-  const warn = coverage >= 50 && failed <= 2;
+// ─── DASHBOARD VIEW ───────────────────────────────────────────────────────────
+function DashboardView({ roles, onNavigate }) {
+  const allFuncs = roles.flatMap(r => r.funcionalidades);
+  const allManual = allFuncs.flatMap(f => f.manual);
+  const allBugs = allFuncs.flatMap(f => f.bugs);
+  const allE2E = allFuncs.flatMap(f => f.e2e);
+  const openBugs = allBugs.filter(b => b.status === "open").length;
+  const criticals = allBugs.filter(b => b.status === "open" && b.severity === "Crítico").length;
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 style={{ color: C.text, fontSize: 18, fontWeight: 800, margin: 0 }}>Relatório de Testes</h2>
-        <button onClick={() => window.print()} style={{
-          display: "flex", alignItems: "center", gap: 8,
-          background: C.blue, color: "#fff", border: "none",
-          borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer"
-        }}>
-          <Printer size={14} /> Imprimir / Salvar PDF
-        </button>
-      </div>
-
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, marginBottom: 20 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-          <div>
-            <p style={{ color: C.textMuted, fontSize: 11, marginBottom: 4 }}>PROJETO</p>
-            <p style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Sistema de Gestão de Clínica / Consultório</p>
-          </div>
-          <div>
-            <p style={{ color: C.textMuted, fontSize: 11, marginBottom: 4 }}>DATA DO RELATÓRIO</p>
-            <p style={{ color: C.text, fontSize: 14 }}>{today}</p>
-          </div>
-        </div>
-        <div style={{
-          background: go ? C.passedBg : warn ? C.blockedBg : C.failedBg,
-          border: `1px solid ${go ? C.passed : warn ? C.blocked : C.failed}`,
-          borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10
-        }}>
-          {go ? <CheckCircle size={18} color={C.passed} /> : warn ? <AlertCircle size={18} color={C.blocked} /> : <XCircle size={18} color={C.failed} />}
-          <span style={{ color: go ? C.passed : warn ? C.blocked : C.failed, fontWeight: 800, fontSize: 14 }}>
-            {go ? "✅ APTO PARA PRODUÇÃO — Todos os critérios atendidos"
-              : warn ? "⚠ CONDICIONAL — Ajustes necessários antes do go-live"
-              : "🚫 NÃO APTO — Cobertura insuficiente ou falhas críticas pendentes"}
-          </span>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
         {[
-          ["Total", total, C.blue],
-          ["Passaram", passed, C.passed],
-          ["Falharam", failed, C.failed],
-          ["Bloqueados", blocked, C.blocked],
-          ["Pendentes", pending, C.pending],
-          ["Bugs Abertos", openBugs, openBugs > 0 ? C.failed : C.passed],
+          ["Funcionalidades", allFuncs.length, C.blue],
+          ["Testes E2E", allE2E.length, C.amber],
+          ["Bugs abertos", openBugs, openBugs > 0 ? C.failed : C.passed],
+          ["Críticos", criticals, criticals > 0 ? C.failed : C.passed],
         ].map(([label, val, color]) => (
-          <div key={label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 12px", textAlign: "center" }}>
-            <div style={{ color, fontSize: 28, fontWeight: 800, fontFamily: "monospace" }}>{val}</div>
-            <div style={{ color: C.textMuted, fontSize: 11, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+          <div key={label} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${color}`, borderRadius: 10, padding: "18px 20px" }}>
+            <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{label}</div>
+            <div style={{ color, fontSize: 34, fontWeight: 800, fontFamily: "monospace" }}>{val}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-          <span style={{ color: C.textDim, fontSize: 13, fontWeight: 700 }}>Cobertura Geral</span>
-          <span style={{ color: coverage > 70 ? C.passed : coverage > 40 ? C.blocked : C.failed, fontSize: 20, fontWeight: 800, fontFamily: "monospace" }}>{coverage}%</span>
-        </div>
-        <div style={{ background: C.border, borderRadius: 8, height: 12, overflow: "hidden" }}>
-          <div style={{ width: `${coverage}%`, height: "100%", background: coverage > 70 ? C.passed : coverage > 40 ? C.blocked : C.failed, borderRadius: 8, transition: "width 0.5s" }} />
-        </div>
+      <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.06em" }}>Roles</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {roles.map(role => {
+          const bugs = role.funcionalidades.flatMap(f => f.bugs).filter(b => b.status === "open").length;
+          const crits = role.funcionalidades.flatMap(f => f.bugs).filter(b => b.status === "open" && b.severity === "Crítico").length;
+          const e2e = role.funcionalidades.flatMap(f => f.e2e).length;
+          return (
+            <div key={role.id} onClick={() => onNavigate({ page: "role", roleId: role.id })}
+              style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${role.color}`, borderRadius: 10, padding: "14px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16 }}
+            >
+              <span style={{ color: role.color, fontWeight: 700, fontSize: 14, minWidth: 130 }}>{role.label}</span>
+              <span style={{ color: C.textMuted, fontSize: 12 }}>{role.funcionalidades.length} funcionalidades</span>
+              <span style={{ color: C.amber, fontSize: 12 }}>{e2e} E2E</span>
+              {bugs > 0 && <Badge text={`${bugs} bug${bugs !== 1 ? "s" : ""}`} color={C.failed} bg={C.failedBg} />}
+              {crits > 0 && <Badge text={`${crits} crítico${crits !== 1 ? "s" : ""}`} color={C.failed} bg={C.failedBg} />}
+              <ChevronRight size={16} color={C.textMuted} style={{ marginLeft: "auto" }} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── ROLE VIEW ────────────────────────────────────────────────────────────────
+function RoleView({ role, onNavigate, onAddFunc, onDeleteFunc }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const allBugs = role.funcionalidades.flatMap(f => f.bugs);
+  const openBugs = allBugs.filter(b => b.status === "open").length;
+  const criticals = allBugs.filter(b => b.status === "open" && b.severity === "Crítico").length;
+  const allE2E = role.funcionalidades.flatMap(f => f.e2e).length;
+
+  const handleAdd = () => {
+    if (!newLabel.trim()) return;
+    onAddFunc(role.id, newLabel.trim());
+    setNewLabel(""); setShowAdd(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
+        {[
+          ["Funcionalidades", role.funcionalidades.length, C.blue],
+          ["Testes E2E", allE2E, C.amber],
+          ["Bugs abertos", openBugs, openBugs > 0 ? C.failed : C.passed],
+          ["Críticos", criticals, criticals > 0 ? C.failed : C.passed],
+        ].map(([label, val, color]) => (
+          <div key={label} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${color}`, borderRadius: 10, padding: "18px 20px" }}>
+            <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{label}</div>
+            <div style={{ color, fontSize: 34, fontWeight: 800, fontFamily: "monospace" }}>{val}</div>
+          </div>
+        ))}
       </div>
 
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
-        <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.06em" }}>Resultado por Módulo</h3>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr>
-              {["Módulo", "Total", "Passou", "Falhou", "Bloqueado", "Pendente", "Cobertura"].map(h => (
-                <th key={h} style={{ color: C.textMuted, textAlign: h === "Módulo" ? "left" : "center", padding: "6px 8px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: `1px solid ${C.border}` }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {modStats.map(s => {
-              const cov = s.total > 0 ? Math.round((s.passed + s.failed + s.blocked) / s.total * 100) : 0;
-              return (
-                <tr key={s.mod} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <td style={{ color: C.text, padding: "10px 8px", fontWeight: 600 }}>{s.mod}</td>
-                  <td style={{ color: C.textDim, textAlign: "center", padding: "10px 8px" }}>{s.total}</td>
-                  <td style={{ color: C.passed, textAlign: "center", padding: "10px 8px", fontWeight: 700 }}>{s.passed}</td>
-                  <td style={{ color: s.failed > 0 ? C.failed : C.textMuted, textAlign: "center", padding: "10px 8px", fontWeight: s.failed > 0 ? 700 : 400 }}>{s.failed}</td>
-                  <td style={{ color: s.blocked > 0 ? C.blocked : C.textMuted, textAlign: "center", padding: "10px 8px", fontWeight: s.blocked > 0 ? 700 : 400 }}>{s.blocked}</td>
-                  <td style={{ color: C.textMuted, textAlign: "center", padding: "10px 8px" }}>{s.pending}</td>
-                  <td style={{ textAlign: "center", padding: "10px 8px" }}>
-                    <span style={{ color: cov > 70 ? C.passed : cov > 40 ? C.blocked : C.failed, fontWeight: 700, fontFamily: "monospace" }}>{cov}%</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", margin: 0 }}>Funcionalidades</h2>
+        <button onClick={() => setShowAdd(!showAdd)} style={{ display: "flex", alignItems: "center", gap: 6, background: C.blueBg, color: C.blue, border: `1px solid ${C.blue}33`, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          <Plus size={14} /> Nova Funcionalidade
+        </button>
       </div>
 
-      {bugs.length > 0 && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
-          <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.06em" }}>Bugs Encontrados ({bugs.length})</h3>
-          {bugs.map(b => (
-            <div key={b.id} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ color: C.failed, fontFamily: "monospace", fontSize: 12, minWidth: 90, fontWeight: 700 }}>{b.id}</span>
-              <Badge text={b.severity} color={SEV_CFG[b.severity]?.color || C.failed} bg={SEV_CFG[b.severity]?.bg || C.failedBg} />
-              <span style={{ color: C.text, fontSize: 13, flex: 1 }}>{b.title}</span>
-              <Badge text={b.status === "resolved" ? "Resolvido" : "Aberto"} color={b.status === "resolved" ? C.passed : C.failed} bg={b.status === "resolved" ? C.passedBg : C.failedBg} />
+      {showAdd && (
+        <div style={{ background: C.card, border: `1px solid ${C.borderLight}`, borderRadius: 10, padding: 16, marginBottom: 16, display: "flex", gap: 10 }}>
+          <input value={newLabel} onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} placeholder="Nome da funcionalidade..." style={{ ...inp(), flex: 1 }} autoFocus />
+          <button onClick={handleAdd} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Criar</button>
+          <button onClick={() => setShowAdd(false)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 8, padding: "8px 12px", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+        </div>
+      )}
+
+      {role.funcionalidades.length === 0 && (
+        <div style={{ textAlign: "center", padding: 48, color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 10 }}>
+          Nenhuma funcionalidade cadastrada. Clique em "Nova Funcionalidade" para começar.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+        {role.funcionalidades.map(func => {
+          const bugs = func.bugs.filter(b => b.status === "open").length;
+          const crits = func.bugs.filter(b => b.status === "open" && b.severity === "Crítico").length;
+          const manual = func.manual.length;
+          const failed = func.manual.filter(m => m.status === "falhou").length;
+          return (
+            <div key={func.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 20, cursor: "pointer", position: "relative" }}
+              onClick={() => onNavigate({ page: "func", roleId: role.id, funcId: func.id })}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+                <span style={{ color: C.text, fontSize: 15, fontWeight: 700 }}>{func.label}</span>
+                <button onClick={e => { e.stopPropagation(); if (window.confirm(`Excluir "${func.label}"?`)) onDeleteFunc(role.id, func.id); }}
+                  style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer", padding: 4 }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Badge text={`${func.e2e.length} E2E`} color={C.amber} bg={C.amberBg} />
+                <Badge text={`${manual} manuais`} color={C.blue} bg={C.blueBg} />
+                {bugs > 0 && <Badge text={`${bugs} bug${bugs !== 1 ? "s" : ""}`} color={C.failed} bg={C.failedBg} />}
+                {crits > 0 && <Badge text="crítico" color={C.failed} bg={C.failedBg} />}
+                {failed > 0 && <Badge text={`${failed} falhou`} color={C.failed} bg={C.failedBg} />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── E2E TAB ──────────────────────────────────────────────────────────────────
+function E2ETab({ e2e }) {
+  if (e2e.length === 0) return (
+    <div style={{ textAlign: "center", padding: 48, color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 10 }}>
+      Nenhum caso E2E cadastrado para esta funcionalidade.
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {e2e.map(c => {
+        const scfg = c.status === "passou" ? { color: C.passed, bg: C.passedBg }
+          : c.status === "falhou" ? { color: C.failed, bg: C.failedBg }
+          : { color: C.pending, bg: C.pendingBg };
+        return (
+          <div key={c.id} style={{ background: C.card, border: `1px solid ${c.status === "falhou" ? C.failed + "44" : c.status === "passou" ? C.passed + "33" : C.border}`, borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ color: C.amber, fontSize: 11, fontFamily: "monospace", fontWeight: 700, minWidth: 110 }}>{c.id}</span>
+            <span style={{ color: C.text, fontSize: 13, flex: 1 }}>{c.title}</span>
+            {c.testDate && <span style={{ color: C.textMuted, fontSize: 11, fontFamily: "monospace" }}>{c.testDate} {c.testTime}</span>}
+            <span style={{ background: scfg.bg, color: scfg.color, border: `1px solid ${scfg.color}44`, borderRadius: 4, padding: "2px 10px", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>
+              {c.status === "passou" ? "Passou ✓" : c.status === "falhou" ? "Falhou ✗" : "Pendente"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── MANUAL TAB ───────────────────────────────────────────────────────────────
+function CreateEditManualModal({ func, item, onSave, onClose }) {
+  const isEdit = !!item;
+  const [form, setForm] = useState({
+    contexto: item?.contexto || "",
+    title: item?.title || "",
+    tipo: item?.tipo || "Validação de campo",
+    note: item?.note || "",
+    images: item?.images || [],
+  });
+  const save = () => {
+    if (!form.title.trim()) return;
+    onSave(form);
+  };
+  return (
+    <Modal title={isEdit ? "Editar Teste Manual" : "Novo Teste Manual"} onClose={onClose} width={640}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>CONTEXTO</label>
+            <input value={form.contexto} onChange={e => setForm(f => ({ ...f, contexto: e.target.value }))} placeholder="Ex: Tela principal" style={inp()} />
+          </div>
+          <div>
+            <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TIPO</label>
+            <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} style={inp({ cursor: "pointer" })}>
+              {TIPOS.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>TÍTULO *</label>
+          <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="O que este teste valida..." style={inp()} autoFocus />
+        </div>
+        <div>
+          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>NOTAS</label>
+          <textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Pré-condições, passos, observações..." style={{ ...inp(), minHeight: 70, resize: "vertical", fontFamily: "monospace" }} />
+        </div>
+        <div>
+          <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 8 }}>SCREENSHOTS</label>
+          <ImageArea images={form.images} onChange={imgs => setForm(f => ({ ...f, images: imgs }))} />
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
+          <button onClick={onClose} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+          <button onClick={save} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Salvar</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ImportModal({ func, onImport, onClose }) {
+  const [text, setText] = useState("");
+  const parsed = parseImport(text);
+  const existingTitles = new Set(func.manual.map(m => m.title.toLowerCase().trim()));
+
+  const withMeta = parsed.map((p, i) => ({
+    ...p,
+    tipo: detectTipo(p.title),
+    isDuplicate: existingTitles.has(p.title.toLowerCase().trim()),
+    id: genManualId(func.label, func.manual.length, i),
+  }));
+  const newCases = withMeta.filter(c => !c.isDuplicate);
+  const dupeCount = withMeta.length - newCases.length;
+
+  const handleImport = () => {
+    if (newCases.length === 0) return;
+    onImport(newCases.map(p => ({
+      id: p.id, contexto: p.contexto, title: p.title, tipo: p.tipo,
+      status: p.tipo === "Regra de negócio" ? "aguarda" : "pendente",
+      bugId: null, images: [], note: "", comments: [],
+    })));
+    onClose();
+  };
+
+  return (
+    <Modal title="Importar em lote" onClose={onClose} width={720}>
+      <p style={{ color: C.textMuted, fontSize: 13, marginBottom: 4 }}>
+        Formato: <code style={{ background: C.bg, padding: "2px 6px", borderRadius: 4, color: C.amber }}>Contexto | Título</code> ou <code style={{ background: C.bg, padding: "2px 6px", borderRadius: 4, color: C.amber }}>A | B | Título</code>
+      </p>
+      <p style={{ color: C.textMuted, fontSize: 12, marginBottom: 16 }}>Linhas começando com <code style={{ background: C.bg, padding: "1px 4px", borderRadius: 3, color: C.textDim }}>-</code> são ignoradas. Tipo detectado automaticamente por palavra-chave.</p>
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ color: C.textMuted, fontSize: 11, display: "block", marginBottom: 4 }}>CENÁRIOS</label>
+        <textarea value={text} onChange={e => setText(e.target.value)}
+          placeholder={"Tela principal | validar filtro por \"nome\"\nNovo paciente | Dados Pessoais | CPF inválido exibe mensagem de erro\nNovo paciente | Dados Pessoais | Pagamento com status pago pode ser alterado?"}
+          style={{ ...inp(), minHeight: 160, resize: "vertical", fontFamily: "monospace", fontSize: 12 }} autoFocus />
+      </div>
+      {withMeta.length > 0 && (
+        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginBottom: 16, maxHeight: 260, overflowY: "auto" }}>
+          <p style={{ color: C.textMuted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
+            Preview — {newCases.length} novo{newCases.length !== 1 ? "s" : ""}
+            {dupeCount > 0 && <span style={{ color: C.amber, marginLeft: 8 }}>· {dupeCount} duplicado{dupeCount !== 1 ? "s" : ""} (ignorado{dupeCount !== 1 ? "s" : ""})</span>}
+          </p>
+          {withMeta.map((p, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", padding: "5px 0", borderBottom: `1px solid ${C.border}`, opacity: p.isDuplicate ? 0.4 : 1 }}>
+              <span style={{ color: C.textMuted, fontSize: 10, fontFamily: "monospace", minWidth: 90 }}>{p.id}</span>
+              {p.contexto && <Badge text={p.contexto} color={C.textMuted} bg={C.border} />}
+              <Badge text={p.tipo} color={TIPO_CFG[p.tipo]?.color || C.textMuted} bg={TIPO_CFG[p.tipo]?.bg || C.border} />
+              {p.tipo === "Regra de negócio" && <span style={{ color: C.amber, fontSize: 10, fontFamily: "monospace", whiteSpace: "nowrap" }}>→ aguarda</span>}
+              <span style={{ color: p.isDuplicate ? C.textMuted : C.text, fontSize: 12, flex: 1 }}>
+                {p.isDuplicate && "⚠ "}{p.title}
+              </span>
             </div>
           ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button onClick={onClose} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+        <button onClick={handleImport} disabled={newCases.length === 0}
+          style={{ background: newCases.length > 0 ? C.blue : C.border, color: newCases.length > 0 ? "#fff" : C.textMuted, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: newCases.length > 0 ? "pointer" : "default" }}>
+          Importar {newCases.length > 0 ? `${newCases.length} caso${newCases.length !== 1 ? "s" : ""}` : ""}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function ManualTab({ func, onStatusChange, onAddCases, onEditCase, onDeleteCase, onAddComment }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [editingCase, setEditingCase] = useState(null);
+  const [filterStatus, setFilterStatus] = useState(null);
+  const [expandedComments, setExpandedComments] = useState(() =>
+    new Set(func.manual.filter(m => m.status === "aguarda").map(m => m.id))
+  );
+  const [commentText, setCommentText] = useState({});
+
+  const stats = func.manual.reduce((a, m) => { a[m.status] = (a[m.status] || 0) + 1; return a; }, {});
+  const filteredManual = filterStatus ? func.manual.filter(m => m.status === filterStatus) : func.manual;
+  const contexts = [...new Set(filteredManual.map(m => m.contexto || "Sem contexto"))];
+
+  const handleSaveCreate = (form) => {
+    const newCase = {
+      id: genManualId(func.label, func.manual.length),
+      ...form,
+      status: form.tipo === "Regra de negócio" ? "aguarda" : "pendente",
+      bugId: null,
+      comments: [],
+    };
+    onAddCases([newCase]);
+    setShowCreate(false);
+  };
+
+  const handleSaveEdit = (form) => {
+    onEditCase(editingCase.id, form);
+    setEditingCase(null);
+  };
+
+  const toggleComments = (id) => {
+    setExpandedComments(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const submitComment = (mtId) => {
+    const text = (commentText[mtId] || "").trim();
+    if (!text) return;
+    onAddComment(mtId, { text, author: "QA", date: new Date().toLocaleDateString("pt-BR") });
+    setCommentText(p => ({ ...p, [mtId]: "" }));
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          {[
+            { key: null,       label: "Todos",     count: func.manual.length, color: C.textMuted, bg: C.card,       border: C.border },
+            { key: "passou",   label: "Passaram",  count: stats.passou  || 0, color: C.passed,    bg: C.passedBg,   border: C.passed },
+            { key: "falhou",   label: "Falharam",  count: stats.falhou  || 0, color: C.failed,    bg: C.failedBg,   border: C.failed },
+            { key: "aguarda",  label: "Aguardam",  count: stats.aguarda || 0, color: C.amber,     bg: C.amberBg,    border: C.amber },
+            { key: "pendente", label: "Pendentes", count: stats.pendente|| 0, color: C.pending,   bg: C.pendingBg,  border: C.pending },
+          ].map(({ key, label, count, color, bg, border }) => {
+            const active = filterStatus === key;
+            return (
+              <button key={String(key)} onClick={() => setFilterStatus(key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  background: active ? bg : "transparent",
+                  color: active ? color : C.textMuted,
+                  border: `1px solid ${active ? border + "66" : C.border}`,
+                  borderRadius: 20, padding: "4px 12px", fontSize: 12, fontWeight: active ? 700 : 400,
+                  cursor: "pointer", transition: "all 0.15s",
+                }}>
+                {label}
+                <span style={{ background: active ? color + "22" : C.border, color: active ? color : C.textMuted, borderRadius: 10, padding: "0px 6px", fontSize: 11, fontFamily: "monospace", fontWeight: 700 }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setShowImport(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>
+            <Upload size={14} /> Importar em lote
+          </button>
+          <button onClick={() => setShowCreate(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: C.blueBg, color: C.blue, border: `1px solid ${C.blue}33`, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            <Plus size={14} /> Novo teste
+          </button>
+        </div>
+      </div>
+
+      {func.manual.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 48, color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 10 }}>
+          Nenhum teste manual cadastrado. Use "Novo teste" ou "Importar em lote".
+        </div>
+      ) : filteredManual.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 48, color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 10 }}>
+          Nenhum caso encontrado para o filtro selecionado.
+        </div>
+      ) : (
+        contexts.map(ctx => {
+          const cases = filteredManual.filter(m => (m.contexto || "Sem contexto") === ctx);
+          return (
+            <div key={ctx} style={{ marginBottom: 20 }}>
+              <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>
+                {ctx} <span style={{ color: C.border, fontWeight: 400 }}>— {cases.length} caso{cases.length !== 1 ? "s" : ""}</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {cases.map(mc => {
+                  const isExpanded = expandedComments.has(mc.id);
+                  const commentCount = mc.comments?.length || 0;
+                  const borderColor = mc.status === "falhou" ? C.failed : mc.status === "passou" ? C.passed : mc.status === "aguarda" ? C.amber : C.border;
+                  return (
+                    <div key={mc.id} style={{
+                      background: C.card,
+                      border: `1px solid ${borderColor + (mc.status === "falhou" ? "55" : mc.status === "passou" ? "33" : mc.status === "aguarda" ? "44" : "")}`,
+                      borderLeft: `3px solid ${borderColor}`,
+                      borderRadius: 8, overflow: "hidden",
+                    }}>
+                      <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <span style={{ color: C.blue, fontSize: 11, fontFamily: "monospace", fontWeight: 700, minWidth: 100 }}>{mc.id}</span>
+                        <Badge text={mc.tipo} color={TIPO_CFG[mc.tipo]?.color || C.textMuted} bg={TIPO_CFG[mc.tipo]?.bg || C.border} />
+                        <span style={{ color: C.text, fontSize: 13, flex: 1, minWidth: 200 }}>{mc.title}</span>
+                        {mc.images?.length > 0 && <span style={{ color: C.textMuted, fontSize: 11 }}>📎 {mc.images.length}</span>}
+                        {mc.bugId && (
+                          <span style={{ color: C.purple, background: C.purpleBg, border: `1px solid ${C.purple}33`, borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>
+                            ⚡ {mc.bugId}
+                          </span>
+                        )}
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <button onClick={() => toggleComments(mc.id)} title="Comentários" style={{ display: "flex", alignItems: "center", gap: 4, background: isExpanded ? C.amberBg : "transparent", color: commentCount > 0 ? C.amber : C.textMuted, border: `1px solid ${isExpanded ? C.amber + "44" : C.border}`, borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
+                            <MessageSquare size={11} /> {commentCount}
+                          </button>
+                          <ManualStatusBtn status={mc.status} onClick={() => onStatusChange(mc.id)} />
+                          <button onClick={() => setEditingCase(mc)} style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer", padding: 4 }} title="Editar"><Edit2 size={13} /></button>
+                          <button onClick={() => { if (window.confirm("Excluir este teste?")) onDeleteCase(mc.id); }} style={{ background: "transparent", border: "none", color: C.textMuted, cursor: "pointer", padding: 4 }} title="Excluir"><Trash2 size={13} /></button>
+                        </div>
+                      </div>
+                      {isExpanded && (
+                        <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 14px", background: C.bg }}>
+                          {commentCount > 0 && (
+                            <div style={{ marginBottom: 10 }}>
+                              {(mc.comments || []).map((c, i) => (
+                                <div key={i} style={{ background: C.card, borderRadius: 6, padding: "8px 12px", marginBottom: 6, borderLeft: `2px solid ${C.amber}` }}>
+                                  <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+                                    <span style={{ color: C.amber, fontSize: 11, fontWeight: 700 }}>{c.author}</span>
+                                    <span style={{ color: C.textMuted, fontSize: 11 }}>{c.date}</span>
+                                  </div>
+                                  <p style={{ color: C.textDim, fontSize: 13, margin: 0 }}>{c.text}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <input
+                              value={commentText[mc.id] || ""}
+                              onChange={e => setCommentText(p => ({ ...p, [mc.id]: e.target.value }))}
+                              onKeyDown={e => e.key === "Enter" && submitComment(mc.id)}
+                              placeholder="Adicionar comentário..."
+                              style={{ ...inp(), flex: 1 }}
+                            />
+                            <button onClick={() => submitComment(mc.id)} style={{ background: C.amber, color: "#000", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                              Enviar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })
+      )}
+
+      {showCreate && <CreateEditManualModal func={func} onSave={handleSaveCreate} onClose={() => setShowCreate(false)} />}
+      {showImport && <ImportModal func={func} onImport={onAddCases} onClose={() => setShowImport(false)} />}
+      {editingCase && <CreateEditManualModal func={func} item={editingCase} onSave={handleSaveEdit} onClose={() => setEditingCase(null)} />}
+    </div>
+  );
+}
+
+// ─── BUGS TAB ─────────────────────────────────────────────────────────────────
+function BugsTab({ bugs, onResolve, onAddComment }) {
+  const [expandedId, setExpandedId] = useState(null);
+  const [commentText, setCommentText] = useState({});
+  const open = bugs.filter(b => b.status === "open");
+  const resolved = bugs.filter(b => b.status === "resolved");
+
+  const submitComment = (bugId) => {
+    const text = (commentText[bugId] || "").trim();
+    if (!text) return;
+    onAddComment(bugId, { text, author: "QA", date: new Date().toLocaleDateString("pt-BR") });
+    setCommentText(p => ({ ...p, [bugId]: "" }));
+  };
+
+  const renderBug = (b) => {
+    const isExpanded = expandedId === b.id;
+    return (
+      <div key={b.id} style={{ background: C.card, border: `1px solid ${C.purple}44`, borderLeft: `3px solid ${b.status === "resolved" ? C.passed : (SEV_CFG[b.severity]?.color || C.failed)}`, borderRadius: 8, overflow: "hidden", opacity: b.status === "resolved" ? 0.65 : 1, marginBottom: 8 }}>
+        <div style={{ padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+                <span style={{ color: C.purple, fontSize: 11, fontFamily: "monospace", fontWeight: 700 }}>{b.id}</span>
+                <Badge text={b.severity} color={SEV_CFG[b.severity]?.color || C.failed} bg={SEV_CFG[b.severity]?.bg || C.failedBg} />
+                <span style={{ color: C.textMuted, fontSize: 11 }}>{b.date}</span>
+                {b.status === "resolved" && <Badge text="Resolvido" color={C.passed} bg={C.passedBg} />}
+                <span style={{ color: C.purple, background: C.purpleBg, border: `1px solid ${C.purple}33`, borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700, fontFamily: "monospace" }}>⚡ {b.mtId}</span>
+              </div>
+              <p style={{ color: C.text, fontSize: 13, fontWeight: 600, margin: 0 }}>{b.title}</p>
+              {b.description && <p style={{ color: C.textMuted, fontSize: 12, marginTop: 6, fontFamily: "monospace", whiteSpace: "pre-line" }}>{b.description}</p>}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button onClick={() => onResolve(b.id)} style={{ background: b.status === "open" ? C.passedBg : C.border, color: b.status === "open" ? C.passed : C.textMuted, border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+                {b.status === "open" ? "✓ Resolver" : "↺ Reabrir"}
+              </button>
+              <button onClick={() => setExpandedId(isExpanded ? null : b.id)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: "6px 10px", cursor: "pointer" }}>
+                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px" }}>
+            {b.images?.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <p style={{ color: C.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Screenshots</p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {b.images.map((img, i) => (
+                    <a key={i} href={img.data} target="_blank" rel="noreferrer">
+                      <img src={img.data} alt={img.name} style={{ height: 80, width: 120, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <p style={{ color: C.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                <MessageSquare size={12} /> Comentários ({b.comments?.length || 0})
+              </p>
+              {(b.comments || []).map((c, i) => (
+                <div key={i} style={{ background: C.bg, borderRadius: 6, padding: "8px 12px", marginBottom: 6, borderLeft: `2px solid ${C.blue}` }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+                    <span style={{ color: C.blue, fontSize: 11, fontWeight: 700 }}>{c.author}</span>
+                    <span style={{ color: C.textMuted, fontSize: 11 }}>{c.date}</span>
+                  </div>
+                  <p style={{ color: C.textDim, fontSize: 13, margin: 0 }}>{c.text}</p>
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <input value={commentText[b.id] || ""} onChange={e => setCommentText(p => ({ ...p, [b.id]: e.target.value }))}
+                  onKeyDown={e => e.key === "Enter" && submitComment(b.id)}
+                  placeholder="Adicionar comentário..." style={{ ...inp(), flex: 1 }} />
+                <button onClick={() => submitComment(b.id)} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Enviar</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (bugs.length === 0) return (
+    <div style={{ textAlign: "center", padding: 48, color: C.textMuted, border: `1px dashed ${C.border}`, borderRadius: 10 }}>
+      Nenhum bug registrado. Bugs aparecem automaticamente quando um teste manual é marcado como "Falhou".
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+        <span style={{ color: C.failed, fontWeight: 700, fontSize: 13 }}>{open.length} abertos</span>
+        <span style={{ color: C.passed, fontWeight: 700, fontSize: 13 }}>{resolved.length} resolvidos</span>
+      </div>
+      {open.map(renderBug)}
+      {resolved.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <p style={{ color: C.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Resolvidos</p>
+          {resolved.map(renderBug)}
         </div>
       )}
     </div>
   );
 }
 
-// ── MAIN APP ────────────────────────────────────────────────────────────────
+// ─── FUNC VIEW ────────────────────────────────────────────────────────────────
+function FuncView({ role, func, onManualStatus, onAddManual, onEditManual, onDeleteManual, onResolveBug, onAddComment, onAddManualComment }) {
+  const [tab, setTab] = useState("manual");
+  const openBugs = func.bugs.filter(b => b.status === "open").length;
+  const failedManual = func.manual.filter(m => m.status === "falhou").length;
+
+  const tabs = [
+    { id: "e2e",    label: "Testes E2E",    count: func.e2e.length },
+    { id: "manual", label: "Testes Manuais", count: func.manual.length, badge: failedManual },
+    { id: "bugs",   label: "Bugs",           count: func.bugs.length,   badge: openBugs },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `1px solid ${C.border}`, paddingBottom: 0 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            display: "flex", alignItems: "center", gap: 6,
+            background: "transparent", color: tab === t.id ? C.blue : C.textMuted,
+            border: "none", borderBottom: `2px solid ${tab === t.id ? C.blue : "transparent"}`,
+            padding: "10px 16px", fontSize: 13, fontWeight: tab === t.id ? 700 : 400,
+            cursor: "pointer", marginBottom: -1,
+          }}>
+            {t.label}
+            <span style={{ background: t.badge > 0 ? C.failedBg : C.border, color: t.badge > 0 ? C.failed : C.textMuted, borderRadius: 10, padding: "1px 7px", fontSize: 11, fontFamily: "monospace" }}>
+              {t.count}
+            </span>
+            {t.badge > 0 && <span style={{ background: C.failed, color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 10, fontWeight: 800 }}>{t.badge}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === "e2e"    && <E2ETab e2e={func.e2e} />}
+      {tab === "manual" && <ManualTab func={func} onStatusChange={onManualStatus} onAddCases={onAddManual} onEditCase={onEditManual} onDeleteCase={onDeleteManual} onAddComment={onAddManualComment} />}
+      {tab === "bugs"   && <BugsTab bugs={func.bugs} onResolve={onResolveBug} onAddComment={onAddComment} />}
+    </div>
+  );
+}
+
+// ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+function Sidebar({ roles, nav, onNavigate }) {
+  return (
+    <div style={{ width: 220, background: C.card, borderRight: `1px solid ${C.border}`, height: "100vh", position: "sticky", top: 0, flexShrink: 0, overflowY: "auto" }}>
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 28, height: 28, background: C.blue, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Layers size={16} color="#fff" />
+        </div>
+        <span style={{ fontWeight: 800, fontSize: 14, letterSpacing: "-0.02em" }}>QA Dashboard</span>
+      </div>
+
+      <div style={{ padding: "12px 8px" }}>
+        <div style={{ padding: "4px 8px 8px", color: C.textMuted, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Visão Geral</div>
+        <button onClick={() => onNavigate({ page: "dashboard" })} style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 10,
+          background: nav.page === "dashboard" ? C.blueBg : "transparent",
+          color: nav.page === "dashboard" ? C.blue : C.textDim,
+          border: nav.page === "dashboard" ? `1px solid ${C.blue}33` : "1px solid transparent",
+          borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: nav.page === "dashboard" ? 700 : 400,
+          cursor: "pointer", textAlign: "left",
+        }}>
+          <LayoutDashboard size={15} /> Dashboard
+        </button>
+
+        <div style={{ padding: "12px 8px 6px", color: C.textMuted, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: 8 }}>Roles</div>
+        {roles.map(role => {
+          const isActive = nav.roleId === role.id;
+          const openBugs = role.funcionalidades.flatMap(f => f.bugs).filter(b => b.status === "open").length;
+          return (
+            <button key={role.id} onClick={() => onNavigate({ page: "role", roleId: role.id })} style={{
+              width: "100%", display: "flex", alignItems: "center", gap: 10,
+              background: isActive ? `${role.color}15` : "transparent",
+              color: isActive ? role.color : C.textDim,
+              border: isActive ? `1px solid ${role.color}33` : "1px solid transparent",
+              borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: isActive ? 700 : 400,
+              cursor: "pointer", textAlign: "left", marginBottom: 2,
+            }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: role.color, flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>{role.label}</span>
+              {openBugs > 0 && <span style={{ background: C.failed, color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 10, fontWeight: 800 }}>{openBugs}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView] = useState("dashboard");
-  const [cases, setCases] = useState(null);
-  const [bugs, setBugs] = useState(null);
+  const [roles, setRoles] = useState(null);
+  const [nav, setNav] = useState({ page: "dashboard" });
   const [loading, setLoading] = useState(true);
+  const isRemoteUpdate = useRef(false);
+  const isMigrating = useRef(false);
+  const testResultsCache = useRef(null);
 
   useEffect(() => {
-    loadData().then(async data => {
-      // Bugs: merge seed sem sobrescrever
-      const storedBugs = data?.bugs || INITIAL_BUGS;
-      const storedBugIds = new Set(storedBugs.map(b => b.id));
-      const mergedBugs = [...storedBugs, ...SEED_BUGS_RECEP.filter(b => !storedBugIds.has(b.id))];
+    const firebaseRef = dbRef(db, STORAGE_KEY);
 
-      // Cases: merge seeds sem sobrescrever
-      const storedCases = data?.cases || INITIAL_CASES;
-      const storedCaseIds = new Set(storedCases.map(c => c.id));
-      let mergedCases = [
-        ...storedCases,
-        ...SEED_CASES_AUTO.filter(c => !storedCaseIds.has(c.id)),
-        ...SEED_CASES_PACIENTES.filter(c => !storedCaseIds.has(c.id)),
-      ];
-
-      // Aplica resultados dos testes automatizados — só atualiza status, nunca substitui dados
+    const applyRoles = async (rawRoles) => {
+      let r = rawRoles || INITIAL_ROLES;
       try {
-        const res = await fetch('/test-results.json');
-        if (res.ok) {
-          const results = await res.json();
-          mergedCases = mergedCases.map(c => {
-            const r = results[c.id];
-            if (!r) return c;
-            if (typeof r === 'string') return { ...c, status: r };
-            return { ...c, status: r.status, testError: r.error, testDate: r.date, testTime: r.time, reportUrl: r.reportUrl };
-          });
+        if (!testResultsCache.current) {
+          const res = await fetch("/test-results.json");
+          if (res.ok) testResultsCache.current = await res.json();
+        }
+        if (testResultsCache.current) {
+          const results = testResultsCache.current;
+          r = r.map(role => ({
+            ...role,
+            funcionalidades: role.funcionalidades.map(func => ({
+              ...func,
+              e2e: func.e2e.map(c => {
+                const result = results[c.id];
+                if (!result) return c;
+                if (typeof result === "string") return { ...c, status: result };
+                return { ...c, status: result.status, testError: result.error, testDate: result.date, testTime: result.time };
+              }),
+            })),
+          }));
         }
       } catch {}
-
-      setCases(mergedCases);
-      setBugs(mergedBugs);
+      isRemoteUpdate.current = true;
+      setRoles(r);
       setLoading(false);
+    };
+
+    const unsubscribe = onValue(firebaseRef, async (snapshot) => {
+      const data = snapshot.val();
+
+      if (!data && !isMigrating.current) {
+        isMigrating.current = true;
+        try {
+          const local = localStorage.getItem(STORAGE_KEY);
+          if (local) {
+            const parsed = JSON.parse(local);
+            await dbSet(firebaseRef, parsed);
+            return; // onValue will fire again with the migrated data
+          }
+        } catch {}
+      }
+
+      await applyRoles(data?.roles ?? null);
     });
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (cases !== null && bugs !== null) {
-      saveData({ cases, bugs });
+    if (roles !== null) {
+      if (isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
+      saveData({ roles });
     }
-  }, [cases, bugs]);
+  }, [roles]);
 
-  const handleStatusChange = useCallback((id) => {
-    setCases(prev => prev.map(c => {
-      if (c.id !== id) return c;
-      const nextStatus = STATUS_CYCLE[(STATUS_CYCLE.indexOf(c.status) + 1) % STATUS_CYCLE.length];
-      return { ...c, status: nextStatus };
+  const handleAddFunc = useCallback((roleId, label) => {
+    setRoles(prev => prev.map(r => r.id !== roleId ? r : {
+      ...r,
+      funcionalidades: [...r.funcionalidades, { id: genFuncId(label), label, e2e: [], manual: [], bugs: [] }],
     }));
   }, []);
 
-  const handleAddNote = useCallback((id, note) => {
-    setCases(prev => prev.map(c => c.id === id ? { ...c, note } : c));
+  const handleDeleteFunc = useCallback((roleId, funcId) => {
+    setRoles(prev => prev.map(r => r.id !== roleId ? r : {
+      ...r,
+      funcionalidades: r.funcionalidades.filter(f => f.id !== funcId),
+    }));
   }, []);
 
-  const handleAddCase = useCallback((newCase) => {
-    setCases(prev => [...prev, newCase]);
+  const handleManualStatus = useCallback((roleId, funcId, mtId) => {
+    setRoles(prev => updateFunc(prev, roleId, funcId, func => {
+      const mt = func.manual.find(m => m.id === mtId);
+      if (!mt) return func;
+      const idx = MANUAL_STATUS_CYCLE.indexOf(mt.status);
+      const next = MANUAL_STATUS_CYCLE[(idx + 1) % MANUAL_STATUS_CYCLE.length];
+      let manual, bugs = [...func.bugs];
+
+      if (next === "falhou") {
+        const bugId = `BUG-AUTO-${mtId}`;
+        if (!bugs.find(b => b.id === bugId)) {
+          bugs = [...bugs, {
+            id: bugId, title: `[AUTO] ${mt.title}`, severity: "Médio",
+            status: "open", mtId, images: [...(mt.images || [])],
+            comments: [], date: new Date().toLocaleDateString("pt-BR"),
+            description: `Gerado automaticamente do teste manual ${mtId}.${mt.note?.trim() ? `\n\nNotas do caso de teste:\n${mt.note.trim()}` : ""}`,
+          }];
+        }
+        manual = func.manual.map(m => m.id === mtId ? { ...m, status: next, bugId } : m);
+      } else {
+        if (mt.status === "falhou" && mt.bugId) bugs = bugs.filter(b => b.id !== mt.bugId);
+        manual = func.manual.map(m => m.id === mtId ? { ...m, status: next, bugId: null } : m);
+      }
+      return { ...func, manual, bugs };
+    }));
   }, []);
 
-  const handleEditCase = useCallback((id, updated) => {
-    setCases(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
+  const handleAddManual = useCallback((roleId, funcId, cases) => {
+    setRoles(prev => updateFunc(prev, roleId, funcId, func => ({
+      ...func, manual: [...func.manual, ...cases],
+    })));
   }, []);
 
-  const handleAddBug = useCallback((bug) => {
-    setBugs(prev => [bug, ...prev]);
+  const handleEditManual = useCallback((roleId, funcId, mtId, form) => {
+    setRoles(prev => updateFunc(prev, roleId, funcId, func => ({
+      ...func, manual: func.manual.map(m => m.id === mtId ? { ...m, ...form } : m),
+    })));
   }, []);
 
-  const handleEditBug = useCallback((id, updated) => {
-    setBugs(prev => prev.map(b => b.id === id ? { ...b, ...updated } : b));
+  const handleDeleteManual = useCallback((roleId, funcId, mtId) => {
+    setRoles(prev => updateFunc(prev, roleId, funcId, func => {
+      const mt = func.manual.find(m => m.id === mtId);
+      const bugs = mt?.bugId ? func.bugs.filter(b => b.id !== mt.bugId) : func.bugs;
+      return { ...func, manual: func.manual.filter(m => m.id !== mtId), bugs };
+    }));
   }, []);
 
-  const handleToggleBug = useCallback((id) => {
-    setBugs(prev => prev.map(b => b.id === id ? { ...b, status: b.status === "open" ? "resolved" : "open" } : b));
+  const handleResolveBug = useCallback((roleId, funcId, bugId) => {
+    setRoles(prev => updateFunc(prev, roleId, funcId, func => ({
+      ...func, bugs: func.bugs.map(b => b.id !== bugId ? b : { ...b, status: b.status === "open" ? "resolved" : "open" }),
+    })));
   }, []);
 
-  const handleDeleteBug = useCallback((id) => {
-    setBugs(prev => prev.filter(b => b.id !== id));
+  const handleAddComment = useCallback((roleId, funcId, bugId, comment) => {
+    setRoles(prev => updateFunc(prev, roleId, funcId, func => ({
+      ...func, bugs: func.bugs.map(b => b.id !== bugId ? b : { ...b, comments: [...(b.comments || []), comment] }),
+    })));
   }, []);
 
-  const handleReset = () => {
-    if (!window.confirm("Resetar todos os testes para Pendente? Bugs serão mantidos.")) return;
-    setCases(prev => prev.map(c => ({ ...c, status: "pending", note: "" })));
-  };
+  const handleAddManualComment = useCallback((roleId, funcId, mtId, comment) => {
+    setRoles(prev => updateFunc(prev, roleId, funcId, func => ({
+      ...func, manual: func.manual.map(m => m.id !== mtId ? m : { ...m, comments: [...(m.comments || []), comment] }),
+    })));
+  }, []);
 
-  const navItems = [
-    { id: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
-    { id: "cases",     label: "Casos de Teste", Icon: List },
-    { id: "bugs",      label: "Bugs", Icon: Bug },
-    { id: "report",    label: "Relatório", Icon: FileText },
-  ];
-
-  if (loading) {
-    return (
-      <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: C.textMuted, fontSize: 14, display: "flex", alignItems: "center", gap: 10 }}>
-          <RefreshCw size={18} style={{ animation: "spin 1s linear infinite" }} />
-          Carregando dados...
-        </div>
+  if (loading) return (
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ color: C.textMuted, fontSize: 14, display: "flex", alignItems: "center", gap: 10 }}>
+        <RefreshCw size={18} style={{ animation: "spin 1s linear infinite" }} /> Carregando...
       </div>
-    );
-  }
+    </div>
+  );
 
-  const openBugsCount = bugs.filter(b => b.status === "open").length;
-  const failedCount = cases.filter(c => c.status === "failed").length;
+  const currentRole = roles.find(r => r.id === nav.roleId);
+  const currentFunc = currentRole?.funcionalidades.find(f => f.id === nav.funcId);
+
+  const breadcrumb = (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+      <button onClick={() => setNav({ page: "dashboard" })} style={{ background: "none", border: "none", color: nav.page === "dashboard" ? C.text : C.textMuted, cursor: "pointer", fontSize: 13, padding: 0, fontWeight: nav.page === "dashboard" ? 700 : 400 }}>
+        Dashboard
+      </button>
+      {currentRole && <>
+        <ChevronRight size={14} color={C.textMuted} />
+        <button onClick={() => setNav({ page: "role", roleId: currentRole.id })} style={{ background: "none", border: "none", color: nav.page === "role" ? currentRole.color : C.textMuted, cursor: "pointer", fontSize: 13, padding: 0, fontWeight: nav.page === "role" ? 700 : 400 }}>
+          {currentRole.label}
+        </button>
+      </>}
+      {currentFunc && <>
+        <ChevronRight size={14} color={C.textMuted} />
+        <span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{currentFunc.label}</span>
+      </>}
+    </div>
+  );
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif", color: C.text }}>
+    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "'IBM Plex Sans','Segoe UI',system-ui,sans-serif", color: C.text, display: "flex" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1458,75 +1182,50 @@ export default function App() {
         ::-webkit-scrollbar-track { background: ${C.bg}; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 3px; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @media print {
-          nav, button { display: none !important; }
-          body { background: white !important; color: black !important; }
-        }
         textarea:focus, input:focus, select:focus { border-color: ${C.blue} !important; }
+        button:hover { opacity: 0.9; }
       `}</style>
 
-      {/* Top bar */}
-      <div style={{
-        background: C.card, borderBottom: `1px solid ${C.border}`,
-        padding: "0 24px", display: "flex", alignItems: "center", height: 56, gap: 24,
-        position: "sticky", top: 0, zIndex: 100
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 28, height: 28, background: C.blue, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Layers size={16} color="#fff" />
-          </div>
-          <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.02em" }}>QA</span>
-          <span style={{ color: C.textMuted, fontSize: 15 }}>Dashboard</span>
-        </div>
+      <Sidebar roles={roles} nav={nav} onNavigate={setNav} />
 
-        <nav style={{ display: "flex", gap: 2, flex: 1 }}>
-          {navItems.map(({ id, label, Icon }) => (
-            <button key={id} onClick={() => setView(id)} style={{
-              display: "flex", alignItems: "center", gap: 7,
-              background: view === id ? C.blueBg : "transparent",
-              color: view === id ? C.blue : C.textMuted,
-              border: view === id ? `1px solid ${C.blue}33` : "1px solid transparent",
-              borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: view === id ? 700 : 500,
-              cursor: "pointer", transition: "all 0.15s"
-            }}>
-              <Icon size={14} />
-              {label}
-              {id === "bugs" && openBugsCount > 0 && (
-                <span style={{ background: C.failed, color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 10, fontWeight: 800, marginLeft: 2 }}>{openBugsCount}</span>
-              )}
-              {id === "cases" && failedCount > 0 && (
-                <span style={{ background: C.failed, color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 10, fontWeight: 800, marginLeft: 2 }}>{failedCount}</span>
-              )}
-            </button>
-          ))}
-        </nav>
+      <div style={{ flex: 1, padding: "28px 32px", overflowY: "auto" }}>
+        {breadcrumb}
 
-        <button onClick={handleReset} title="Resetar todos os casos para Pendente" style={{
-          display: "flex", alignItems: "center", gap: 6,
-          background: "transparent", color: C.textMuted,
-          border: `1px solid ${C.border}`, borderRadius: 8,
-          padding: "6px 12px", fontSize: 12, cursor: "pointer"
-        }}>
-          <RefreshCw size={13} /> Resetar
-        </button>
-      </div>
+        {nav.page === "dashboard" && (
+          <>
+            <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 24, letterSpacing: "-0.02em" }}>Visão Geral</h1>
+            <DashboardView roles={roles} onNavigate={setNav} />
+          </>
+        )}
 
-      {/* Content */}
-      <div style={{ padding: "28px 24px", maxWidth: 1300, margin: "0 auto" }}>
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>
-            {view === "dashboard" && "Visão Geral"}
-            {view === "cases" && `Casos de Teste (${cases.length})`}
-            {view === "bugs" && `Bugs (${bugs.length})`}
-            {view === "report" && "Relatório para o Cliente"}
-          </h1>
-          {view === "cases" && <p style={{ color: C.textMuted, fontSize: 13, marginTop: 4 }}>Clique no status para avançar → Pendente → Passou → Falhou → Bloqueado → Pendente</p>}
-        </div>
+        {nav.page === "role" && currentRole && (
+          <>
+            <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 24, letterSpacing: "-0.02em", color: currentRole.color }}>{currentRole.label}</h1>
+            <RoleView
+              role={currentRole}
+              onNavigate={setNav}
+              onAddFunc={handleAddFunc}
+              onDeleteFunc={handleDeleteFunc}
+            />
+          </>
+        )}
 
-        {view === "dashboard" && <DashboardView cases={cases} bugs={bugs} />}
-        {view === "cases"     && <TestCasesView cases={cases} onStatusChange={handleStatusChange} onAddNote={handleAddNote} onAddCase={handleAddCase} onEditCase={handleEditCase} />}
-        {view === "bugs"      && <BugsView bugs={bugs} onAdd={handleAddBug} onToggle={handleToggleBug} onDelete={handleDeleteBug} onEdit={handleEditBug} />}
-        {view === "report"    && <ReportView cases={cases} bugs={bugs} />}
+        {nav.page === "func" && currentRole && currentFunc && (
+          <>
+            <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 24, letterSpacing: "-0.02em" }}>{currentFunc.label}</h1>
+            <FuncView
+              role={currentRole}
+              func={currentFunc}
+              onManualStatus={(mtId) => handleManualStatus(nav.roleId, nav.funcId, mtId)}
+              onAddManual={(cases) => handleAddManual(nav.roleId, nav.funcId, cases)}
+              onEditManual={(mtId, form) => handleEditManual(nav.roleId, nav.funcId, mtId, form)}
+              onDeleteManual={(mtId) => handleDeleteManual(nav.roleId, nav.funcId, mtId)}
+              onResolveBug={(bugId) => handleResolveBug(nav.roleId, nav.funcId, bugId)}
+              onAddComment={(bugId, comment) => handleAddComment(nav.roleId, nav.funcId, bugId, comment)}
+              onAddManualComment={(mtId, comment) => handleAddManualComment(nav.roleId, nav.funcId, mtId, comment)}
+            />
+          </>
+        )}
       </div>
     </div>
   );

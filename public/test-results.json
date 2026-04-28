@@ -9,36 +9,57 @@
   "PAC-TELA-FILTRO-NOME": {
     "status": "passed",
     "error": null,
-    "date": "22/04/2026",
-    "time": "22:38:28",
+    "date": "23/04/2026",
+    "time": "16:16:41",
     "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
   },
   "PAC-TELA-FILTRO-CPF": {
     "status": "blocked",
     "error": null,
-    "date": "22/04/2026",
-    "time": "22:38:28",
+    "date": "23/04/2026",
+    "time": "16:16:41",
     "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
   },
   "PAC-TELA-FILTRO-TEL": {
     "status": "failed",
-    "error": "expect(locator).not.toHaveCount(expected) failed\n\nLocator:  locator(\"tbody tr:has(td + td)\")\nExpected: not 15\nReceived: 15",
-    "date": "22/04/2026",
-    "time": "22:38:43",
+    "error": "Error: expect(locator).not.toHaveCount(expected) failed\n\nLocator:  locator('tbody tr:has(td + td)')\nExpected: not 15\nReceived: 15",
+    "date": "23/04/2026",
+    "time": "16:16:56",
     "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
   },
   "PAC-TELA-VAZIO": {
     "status": "passed",
     "error": null,
-    "date": "22/04/2026",
-    "time": "22:38:56",
+    "date": "23/04/2026",
+    "time": "16:17:09",
     "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
   },
   "PAC-TELA-LIMPAR": {
     "status": "passed",
     "error": null,
-    "date": "22/04/2026",
-    "time": "22:38:56",
+    "date": "23/04/2026",
+    "time": "16:17:09",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  },
+  "PAC-NOVO-OBRIGATORIO": {
+    "status": "passed",
+    "error": null,
+    "date": "23/04/2026",
+    "time": "23:28:27",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  },
+  "PAC-NOVO-CRIAR": {
+    "status": "passed",
+    "error": null,
+    "date": "23/04/2026",
+    "time": "23:28:27",
+    "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
+  },
+  "PAC-NOVO-LISTAGEM": {
+    "status": "passed",
+    "error": null,
+    "date": "23/04/2026",
+    "time": "23:28:27",
     "reportUrl": "https://test-dashboard-ruby.vercel.app/playwright-report/index.html"
   }
 }
